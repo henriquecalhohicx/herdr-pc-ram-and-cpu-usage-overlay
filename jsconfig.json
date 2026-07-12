@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "checkJs": true,
+    "target": "es2022",
+    "module": "nodenext",
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["index.js"]
+}

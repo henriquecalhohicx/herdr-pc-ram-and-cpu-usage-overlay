@@ -1,0 +1,55 @@
+# herdr plugin: Space Usage (CPU / RAM per space)
+#
+# Shows CPU and RAM usage per space (workspace), grouped under each space's
+# git branch name. herdr plugin v1 has no API to draw into the sidebar, so the
+# data is surfaced two ways:
+#   - a live terminal pane  ("Space usage" overlay)
+#   - a one-shot action     ("Space usage report")
+#
+# Install:     herdr plugin install ezcorp-org/herdr-space-usage
+# Local dev:   herdr plugin link /path/to/herdr-space-usage   (references the dir in place)
+# Remove:      herdr plugin unlink ezcorp.space-usage
+# Logs:        herdr plugin log list --plugin ezcorp.space-usage
+
+id = "ezcorp.space-usage"
+name = "Space Usage"
+version = "0.7.1"
+min_herdr_version = "0.7.0"
+description = "CPU and RAM usage per space, grouped under the branch name."
+platforms = ["linux"]
+
+# Commands are argv arrays (no shell) and run with the plugin dir as cwd,
+# per https://herdr.dev/docs/plugins/#trust-and-security
+
+# Live, self-refreshing dashboard. Opened as a temporary zoomed overlay pane.
+[[panes]]
+id = "dashboard"
+title = "Space usage"
+placement = "overlay"
+command = ["node", "index.js", "--interval", "2"]
+
+# One-shot snapshot printed to stdout / plugin log.
+[[actions]]
+id = "report"
+title = "Space usage report"
+contexts = ["workspace"]
+command = ["node", "index.js", "--once"]
+
+# Sidebar status updater: a background daemon that pushes each space's usage
+# as display-only metadata on a spare shell pane; the locally patched herdr
+# renders it as a third row in the sidebar spaces card. Statuses carry a TTL,
+# so they self-clear if the daemon dies.
+[[actions]]
+id = "status-toggle"
+title = "Toggle sidebar usage status"
+command = ["node", "index.js", "--toggle"]
+
+[[actions]]
+id = "status-enable"
+title = "Enable sidebar usage status"
+command = ["node", "index.js", "--enable"]
+
+[[actions]]
+id = "status-disable"
+title = "Disable sidebar usage status"
+command = ["node", "index.js", "--disable"]
