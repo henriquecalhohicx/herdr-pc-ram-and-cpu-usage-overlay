@@ -89,7 +89,7 @@ fn fmt_ram(mb: f64) -> String {
     if mb >= 1024.0 {
         format!("{:.2} GB", mb / 1024.0)
     } else {
-        format!("{:.0} MB", mb)
+        format!("{} MB", mb.round() as i64)
     }
 }
 
@@ -420,8 +420,8 @@ mod tests {
         assert_eq!(serde_json::to_string(&json_num_1dp(12.0)).unwrap(), "12");
         assert_eq!(serde_json::to_string(&json_num_1dp(0.0)).unwrap(), "0");
         assert_eq!(serde_json::to_string(&json_num_1dp(100.0)).unwrap(), "100");
-        assert_eq!(serde_json::to_string(&json_num_1dp(3.14)).unwrap(), "3.1");
-        assert_eq!(serde_json::to_string(&json_num_1dp(3.16)).unwrap(), "3.2");
+        assert_eq!(serde_json::to_string(&json_num_1dp(5.14)).unwrap(), "5.1");
+        assert_eq!(serde_json::to_string(&json_num_1dp(5.16)).unwrap(), "5.2");
     }
 
     #[test]

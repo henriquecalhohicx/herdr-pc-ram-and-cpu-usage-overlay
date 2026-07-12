@@ -3,8 +3,9 @@
 //! [`Space`] is the internal per-workspace aggregate (mirrors the `Space`
 //! typedef in `index.js` lines 6-21). The remaining types are `serde` views
 //! over the `result` payloads of the herdr socket read methods we call
-//! (`session.snapshot`, `pane.process_info`, `worktree.list`). Each only
-//! declares the fields we consume; serde ignores the rest of herdr's payload.
+//! (`workspace.list`, `pane.list`, `pane.process_info`, `worktree.list`). Each
+//! only declares the fields we consume; serde ignores the rest of herdr's
+//! payload.
 
 use serde::Deserialize;
 
@@ -44,28 +45,21 @@ pub struct Space {
     pub worktree_labels: Option<Vec<String>>,
 }
 
-// ---- session.snapshot -------------------------------------------------------
+// ---- workspace.list ---------------------------------------------------------
 //
-// result = { "type": "session_snapshot", "snapshot": { workspaces, panes, .. } }
+// result = { "type": "workspace_list", "workspaces": [ { workspace_id, label,
+//            focused, .. } ] }
 
-/// `result` payload of `session.snapshot`.
+/// `result` payload of `workspace.list`.
 #[derive(Debug, Clone, Deserialize)]
-pub struct SnapshotResult {
-    pub snapshot: Snapshot,
+pub struct WorkspaceListResult {
+    #[serde(default)]
+    pub workspaces: Vec<WorkspaceInfo>,
 }
 
-/// The `snapshot` object; only the collections we walk are modelled.
+/// One entry of `workspaces`; only the fields we consume are modelled.
 #[derive(Debug, Clone, Deserialize)]
-pub struct Snapshot {
-    #[serde(default)]
-    pub workspaces: Vec<SnapshotWorkspace>,
-    #[serde(default)]
-    pub panes: Vec<SnapshotPane>,
-}
-
-/// One entry of `snapshot.workspaces`.
-#[derive(Debug, Clone, Deserialize)]
-pub struct SnapshotWorkspace {
+pub struct WorkspaceInfo {
     pub workspace_id: String,
     #[serde(default)]
     pub label: String,
@@ -73,11 +67,21 @@ pub struct SnapshotWorkspace {
     pub focused: bool,
 }
 
-/// One entry of `snapshot.panes`.
+// ---- pane.list --------------------------------------------------------------
+//
+// result = { "type": "pane_list", "panes": [ { pane_id, cwd?, agent?, .. } ] }
+
+/// `result` payload of `pane.list`.
 #[derive(Debug, Clone, Deserialize)]
-pub struct SnapshotPane {
+pub struct PaneListResult {
+    #[serde(default)]
+    pub panes: Vec<PaneInfo>,
+}
+
+/// One entry of `panes`; only the fields we consume are modelled.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PaneInfo {
     pub pane_id: String,
-    pub workspace_id: String,
     #[serde(default)]
     pub cwd: Option<String>,
     #[serde(default)]

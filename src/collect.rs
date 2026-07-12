@@ -1,8 +1,8 @@
 //! Snapshot → spaces, worktree grouping, and CPU/RAM measurement
 //! (mirrors `index.js` lines 222-341).
 //!
-//! [`collect_spaces`] turns one `session.snapshot` (plus per-pane
-//! `process_info`) into [`Space`]s. [`group_worktree_families`] and
+//! [`collect_spaces`] turns `workspace.list` + per-workspace `pane.list` (plus
+//! per-pane `process_info`) into [`Space`]s. [`group_worktree_families`] and
 //! [`aggregate_families`] fold worktree-child workspaces into their parent.
 //! [`measure`] samples `/proc` CPU jiffies over a window and fills cpu/ram/proc
 //! counts. [`snapshot`] is the top-level `collect → group → measure → aggregate`
@@ -13,36 +13,27 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use crate::herdr::Herdr;
-use crate::model::{Snapshot, SnapshotPane, Space};
+use crate::model::Space;
 use crate::proc;
 
 /// Pseudo-agent label used to mark our agents-panel entries (agents-panel mode)
 /// and to recognise / clean them up in sidebar mode.
 pub const PSEUDO_AGENT: &str = "usage";
 
-/// Enumerate spaces and the root shell PID of each of their panes from a single
-/// `session.snapshot`, classifying panes into agent / spare / pseudo buckets.
+/// Enumerate spaces and the root shell PID of each of their panes, classifying
+/// panes into agent / spare / pseudo buckets.
 ///
-/// The JS version issued `workspace list` + one `pane list` per workspace; here
-/// a single `session.snapshot` returns every workspace and pane, which we group
-/// by `workspace_id` (preserving encounter order so the "first pane's cwd" —
-/// used for the git branch — matches). `pane.process_info` is still per-pane
-/// (no bulk form), and a pane that closed mid-scan simply contributes no root.
+/// Mirrors the JS exactly (index.js:222-258): one `workspace.list`, then one
+/// `pane.list` per workspace whose panes arrive already ordered — so the "first
+/// pane's cwd" (used for the git branch) matches without any regrouping.
+/// `pane.process_info` is per-pane (no bulk form), and a pane that closed
+/// mid-scan simply contributes no root.
 pub fn collect_spaces(client: &mut Herdr) -> crate::Result<Vec<Space>> {
-    let Snapshot { workspaces, panes } = client.session_snapshot()?;
-
-    // Bucket panes by workspace, keeping their snapshot order within each bucket.
-    let mut panes_by_ws: HashMap<String, Vec<SnapshotPane>> = HashMap::new();
-    for pane in panes {
-        panes_by_ws
-            .entry(pane.workspace_id.clone())
-            .or_default()
-            .push(pane);
-    }
+    let workspaces = client.workspace_list()?;
 
     let mut spaces = Vec::with_capacity(workspaces.len());
     for ws in workspaces {
-        let panes = panes_by_ws.remove(&ws.workspace_id).unwrap_or_default();
+        let panes = client.pane_list(&ws.workspace_id)?;
 
         let mut roots = Vec::new();
         let mut agent_panes = Vec::new(); // panes with a real agent — sidebar rows

@@ -28,7 +28,10 @@ use std::time::Duration;
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::model::{ProcessInfo, ProcessInfoResult, Snapshot, SnapshotResult, WorktreeListResult};
+use crate::model::{
+    PaneInfo, PaneListResult, ProcessInfo, ProcessInfoResult, WorkspaceInfo, WorkspaceListResult,
+    WorktreeListResult,
+};
 
 /// Read/write timeout for a single JSON-RPC round-trip. Generous — herdr answers
 /// in milliseconds; this only guards against a wedged host hanging the plugin.
@@ -125,10 +128,18 @@ impl Herdr {
 
     // ---- read methods -------------------------------------------------------
 
-    /// `session.snapshot` — all workspaces + panes in one call.
-    pub fn session_snapshot(&mut self) -> crate::Result<Snapshot> {
-        let result = self.call("session.snapshot", &json!({}))?;
-        Ok(serde_json::from_value::<SnapshotResult>(result)?.snapshot)
+    /// `workspace.list` — every open workspace (JS `herdr(['workspace','list'])`
+    /// at index.js:223).
+    pub fn workspace_list(&mut self) -> crate::Result<Vec<WorkspaceInfo>> {
+        let result = self.call("workspace.list", &json!({}))?;
+        Ok(serde_json::from_value::<WorkspaceListResult>(result)?.workspaces)
+    }
+
+    /// `pane.list` for one workspace (JS
+    /// `herdr(['pane','list','--workspace',id])` at index.js:225).
+    pub fn pane_list(&mut self, workspace_id: &str) -> crate::Result<Vec<PaneInfo>> {
+        let result = self.call("pane.list", &json!({ "workspace_id": workspace_id }))?;
+        Ok(serde_json::from_value::<PaneListResult>(result)?.panes)
     }
 
     /// `pane.process_info` — the pane's shell PID (no bulk form exists).
@@ -328,7 +339,7 @@ mod tests {
 
     #[test]
     fn frames_empty_params_as_object() {
-        let line = frame_request("x", "session.snapshot", &json!({}));
+        let line = frame_request("x", "workspace.list", &json!({}));
         let v: Value = serde_json::from_str(line.trim()).unwrap();
         // params must be present and an (empty) object, not null — the server's
         // adjacently-tagged Method enum requires the `params` field.
@@ -347,10 +358,10 @@ mod tests {
     #[test]
     fn parses_result_bearing_success() {
         let result =
-            parse_envelope(r#"{"id":"1","result":{"type":"session_snapshot","snapshot":{}}}"#)
+            parse_envelope(r#"{"id":"1","result":{"type":"workspace_list","workspaces":[]}}"#)
                 .unwrap();
-        assert_eq!(result["type"], "session_snapshot");
-        assert!(result["snapshot"].is_object());
+        assert_eq!(result["type"], "workspace_list");
+        assert!(result["workspaces"].is_array());
     }
 
     #[test]
