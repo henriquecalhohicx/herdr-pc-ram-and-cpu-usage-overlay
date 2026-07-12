@@ -1,4 +1,6 @@
 # herdr-space-usage
+<img width="393" height="243" alt="Screenshot 2026-07-11 at 2 41 03 PM" src="https://github.com/user-attachments/assets/720aace3-4aa2-4474-a8ae-3197b84f4f79" />
+
 
 A [herdr](https://herdr.dev) plugin that shows **live CPU and RAM usage per
 space (workspace)** — so when you're running a herd of agents, you can see at
