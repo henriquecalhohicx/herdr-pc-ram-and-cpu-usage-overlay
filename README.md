@@ -21,7 +21,8 @@ a glance which space is eating your machine.
   their parent space's total
 - All-space totals in your terminal's window title: `spaces · cpu 39% · ram 8%`
 - A live dashboard pane and one-shot report/JSON actions
-- Zero dependencies — a single `index.js`, no build step
+- A small static Rust binary (~2–5 MB resident) that talks to herdr over its
+  unix socket — no per-sample subprocess spawns, no Node runtime
 
 ## Install
 
@@ -29,9 +30,10 @@ a glance which space is eating your machine.
 herdr plugin install ezcorp-org/herdr-pc-ram-and-cpu-usage-overlay
 ```
 
-Requirements: Linux (reads `/proc`), `node` ≥ 18 on PATH. Plugins run on the
-machine hosting the herdr server, so remote setups need these on the server
-box only.
+Requirements: Linux (reads `/proc`) and the **Rust toolchain** (`cargo`) on the
+box hosting the herdr server — herdr compiles the plugin at install time via
+`cargo build --release`. Plugins run on the machine hosting the herdr server, so
+remote setups need these on the server box only. `node` is no longer required.
 
 ## Usage
 
@@ -46,7 +48,7 @@ Other entrypoints:
 ```sh
 herdr plugin pane open --plugin ez-corp.space-usage --entrypoint dashboard  # live dashboard
 herdr plugin action invoke report --plugin ez-corp.space-usage             # one-shot snapshot
-node index.js --json                                                   # machine-readable
+./target/release/space-usage --json                                        # machine-readable
 ```
 
 Statuses carry a TTL and self-clear if the updater dies; disabling clears
@@ -83,21 +85,29 @@ which reads the same two keys. Restart the updater to pick up a change.
 
 ## How it works
 
-Per space: panes → each pane's `shell_pid` (via `herdr pane process-info`) →
-walk the `/proc` subtree, summing CPU (utime+stime deltas over a sample
-window) and RSS. Branch comes from the pane cwd's git checkout. Worktree
-families come from `herdr worktree list`. Page size and clock ticks are probed
-with `getconf` for portability.
+The binary opens one persistent connection to the herdr unix socket and speaks
+its newline-delimited JSON-RPC. Per refresh: `session.snapshot` returns every
+workspace and pane in a single call → `pane.process_info` yields each pane's
+`shell_pid` → the process walks that PID's `/proc` subtree, summing CPU
+(utime+stime jiffie deltas over a sample window) and RSS. Branch comes from the
+pane cwd's git checkout, and worktree families from `worktree.list`. Clock ticks
+(`_SC_CLK_TCK`) and page size (`_SC_PAGESIZE`) are probed via `sysconf`.
 
 ## Development
 
 ```sh
-git clone <this repo> && herdr plugin link ./herdr-pc-ram-and-cpu-usage-overlay
+git clone <this repo>
+cd herdr-pc-ram-and-cpu-usage-overlay
+cargo build --release
+herdr plugin link .
 ```
 
-The file is plain JavaScript with `// @ts-check` + JSDoc types — editors with
-TypeScript check it as-is (`jsconfig.json` included); no build step.
+`herdr plugin link` references the directory in place and does **not** run the
+build step, so run `cargo build --release` first — the linked commands invoke
+`./target/release/space-usage`. (`herdr plugin install` builds automatically.)
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
+</content>
+</invoke>
