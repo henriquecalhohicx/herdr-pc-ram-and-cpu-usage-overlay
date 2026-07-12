@@ -100,7 +100,7 @@ pub fn pid_file() -> PathBuf {
 
 /// Read `name` from the environment, treating unset AND empty as absent — the
 /// JS `process.env.X || fallback` idiom (an empty string is falsy in JS).
-fn non_empty_env(name: &str) -> Option<String> {
+pub(crate) fn non_empty_env(name: &str) -> Option<String> {
     match std::env::var(name) {
         Ok(v) if !v.is_empty() => Some(v),
         _ => None,
@@ -116,7 +116,7 @@ fn home_dir() -> PathBuf {
 }
 
 /// XDG config base: `$XDG_CONFIG_HOME` if set (and non-empty), else `~/.config`.
-fn config_home() -> PathBuf {
+pub(crate) fn config_home() -> PathBuf {
     non_empty_env("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| home_dir().join(".config"))
@@ -353,7 +353,7 @@ mod tests {
         assert_eq!(parse_kv_line("a b = x"), None); // space in key
         assert_eq!(parse_kv_line("noeq"), None); // no '='
         assert_eq!(parse_kv_line("mode =   "), None); // empty value
-        // The first '=' splits; later '=' stays in the value.
+                                                      // The first '=' splits; later '=' stays in the value.
         assert_eq!(parse_kv_line("mode = a=b"), Some(("mode", "a=b")));
     }
 }
