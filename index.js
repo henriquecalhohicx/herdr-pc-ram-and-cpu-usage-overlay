@@ -101,7 +101,7 @@ function herdrApi(method, params) {
     }, 2000);
     let buf = '';
     sock.on('connect', () =>
-      sock.write(JSON.stringify({ id: `ezcorp.space-usage:${method}`, method, params }) + '\n'),
+      sock.write(JSON.stringify({ id: `ez-corp.space-usage:${method}`, method, params }) + '\n'),
     );
     sock.on('data', (/** @type {Buffer} */ chunk) => {
       buf += chunk;
@@ -347,7 +347,7 @@ async function snapshot(windowMs) {
 // row in the sidebar spaces card (the patch prefers non-agent pane statuses).
 // Statuses self-clear via TTL if the updater dies.
 
-const PLUGIN_ID = process.env.HERDR_PLUGIN_ID || 'ezcorp.space-usage';
+const PLUGIN_ID = process.env.HERDR_PLUGIN_ID || 'ez-corp.space-usage';
 const PSEUDO_AGENT = 'usage'; // agents-panel mode label; also cleaned up in sidebar mode
 const STATE_DIR = process.env.HERDR_PLUGIN_STATE_DIR || `${os.tmpdir()}/${PLUGIN_ID}`;
 const CONFIG_DIR = process.env.HERDR_PLUGIN_CONFIG_DIR || `${os.tmpdir()}/${PLUGIN_ID}-config`;

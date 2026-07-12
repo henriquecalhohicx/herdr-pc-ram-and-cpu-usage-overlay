@@ -1,6 +1,5 @@
-# herdr-space-usage
-<img width="393" height="243" alt="Screenshot 2026-07-11 at 2 41 03 PM" src="https://github.com/user-attachments/assets/720aace3-4aa2-4474-a8ae-3197b84f4f79" />
-
+# herdr-pc-ram-and-cpu-usage-overlay
+<img width="393" height="243" alt="Screenshot 2026-07-11 at 2 41 03 PM" src="https://github.com/user-attachments/assets/720aace3-4aa2-4474-a8ae-3197b84f4f79" />
 
 A [herdr](https://herdr.dev) plugin that shows **live CPU and RAM usage per
 space (workspace)** — so when you're running a herd of agents, you can see at
@@ -27,7 +26,7 @@ a glance which space is eating your machine.
 ## Install
 
 ```sh
-herdr plugin install ezcorp-org/herdr-space-usage
+herdr plugin install ezcorp-org/herdr-pc-ram-and-cpu-usage-overlay
 ```
 
 Requirements: Linux (reads `/proc`), `node` ≥ 18 on PATH. Plugins run on the
@@ -39,14 +38,14 @@ box only.
 Toggle the background updater (statuses appear in the sidebar within ~5s):
 
 ```sh
-herdr plugin action invoke status-toggle --plugin ezcorp.space-usage
+herdr plugin action invoke status-toggle --plugin ez-corp.space-usage
 ```
 
 Other entrypoints:
 
 ```sh
-herdr plugin pane open --plugin ezcorp.space-usage --entrypoint dashboard  # live dashboard
-herdr plugin action invoke report --plugin ezcorp.space-usage             # one-shot snapshot
+herdr plugin pane open --plugin ez-corp.space-usage --entrypoint dashboard  # live dashboard
+herdr plugin action invoke report --plugin ez-corp.space-usage             # one-shot snapshot
 node index.js --json                                                   # machine-readable
 ```
 
@@ -56,7 +55,7 @@ everything immediately.
 ## Modes
 
 Configure in `$HERDR_PLUGIN_CONFIG_DIR/config.toml`
-(herdr prints the config dir via `herdr plugin config-dir ezcorp.space-usage`):
+(herdr prints the config dir via `herdr plugin config-dir ez-corp.space-usage`):
 
 ```toml
 mode = "agents-panel"       # default — works on stock herdr
@@ -93,7 +92,7 @@ with `getconf` for portability.
 ## Development
 
 ```sh
-git clone <this repo> && herdr plugin link ./herdr-space-usage
+git clone <this repo> && herdr plugin link ./herdr-pc-ram-and-cpu-usage-overlay
 ```
 
 The file is plain JavaScript with `// @ts-check` + JSDoc types — editors with
