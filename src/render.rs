@@ -274,9 +274,17 @@ pub fn run_interval(client: &mut Herdr, labels: &Labels, interval_ms: u64) -> cr
 
     let mut window_ms = FIRST_FRAME_WINDOW_MS;
     loop {
-        let body = match collect::snapshot(client, window_ms) {
-            Ok(spaces) => render(&spaces, labels),
-            Err(err) => format!("{} {err}", Style::detect().red("  herdr unavailable:")),
+        // On success, `snapshot` paces the loop via its internal
+        // `thread::sleep(window_ms)` inside `measure`; on the error path it
+        // returns before `measure`, so this frame has no delay of its own and
+        // must sleep the cadence itself to avoid busy-spinning (mirrors the
+        // daemon's error-branch sleep).
+        let (body, failed) = match collect::snapshot(client, window_ms) {
+            Ok(spaces) => (render(&spaces, labels), false),
+            Err(err) => (
+                format!("{} {err}", Style::detect().red("  herdr unavailable:")),
+                true,
+            ),
         };
         let footer = Style::detect().dim(&format!(
             "  refreshing every {}s · {} · ctrl-c to quit",
@@ -285,6 +293,9 @@ pub fn run_interval(client: &mut Herdr, labels: &Labels, interval_ms: u64) -> cr
         ));
         write!(out, "\x1b[2J\x1b[H{body}\n\n{footer}\n")?;
         out.flush()?;
+        if failed {
+            std::thread::sleep(std::time::Duration::from_millis(interval_ms));
+        }
         window_ms = interval_ms;
     }
 }
