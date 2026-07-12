@@ -21,19 +21,26 @@ platforms = ["linux"]
 # Commands are argv arrays (no shell) and run with the plugin dir as cwd,
 # per https://herdr.dev/docs/plugins/#trust-and-security
 
+# Compiled at install time: herdr runs this once with the plugin root as cwd.
+# The resulting ./target/release/space-usage rides into HERDR_PLUGIN_ROOT and is
+# what every pane/action command below invokes (relative to the plugin root).
+[[build]]
+command = ["cargo", "build", "--release"]
+platforms = ["linux"]
+
 # Live, self-refreshing dashboard. Opened as a temporary zoomed overlay pane.
 [[panes]]
 id = "dashboard"
 title = "Space usage"
 placement = "overlay"
-command = ["node", "index.js", "--interval", "2"]
+command = ["./target/release/space-usage", "--interval", "2"]
 
 # One-shot snapshot printed to stdout / plugin log.
 [[actions]]
 id = "report"
 title = "Space usage report"
 contexts = ["workspace"]
-command = ["node", "index.js", "--once"]
+command = ["./target/release/space-usage", "--once"]
 
 # Sidebar status updater: a background daemon that pushes each space's usage
 # as display-only metadata on a spare shell pane; the locally patched herdr
@@ -42,14 +49,14 @@ command = ["node", "index.js", "--once"]
 [[actions]]
 id = "status-toggle"
 title = "Toggle sidebar usage status"
-command = ["node", "index.js", "--toggle"]
+command = ["./target/release/space-usage", "--toggle"]
 
 [[actions]]
 id = "status-enable"
 title = "Enable sidebar usage status"
-command = ["node", "index.js", "--enable"]
+command = ["./target/release/space-usage", "--enable"]
 
 [[actions]]
 id = "status-disable"
 title = "Disable sidebar usage status"
-command = ["node", "index.js", "--disable"]
+command = ["./target/release/space-usage", "--disable"]
