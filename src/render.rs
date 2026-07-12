@@ -40,8 +40,7 @@ impl Style {
     /// !process.env.NO_COLOR`).
     fn detect() -> Self {
         Style {
-            color: io::stdout().is_terminal()
-                && crate::config::non_empty_env("NO_COLOR").is_none(),
+            color: io::stdout().is_terminal() && crate::config::non_empty_env("NO_COLOR").is_none(),
         }
     }
 
@@ -375,7 +374,7 @@ mod tests {
         assert_eq!(lines[1], "");
         assert_eq!(lines[2], "  ● main"); // focused marker + bold label
         assert_eq!(lines[3], "      feature/x"); // branch line
-                                                  // cpu padded to width 6 ("5.0%" -> "  5.0%"), pane count singular/plural.
+                                                 // cpu padded to width 6 ("5.0%" -> "  5.0%"), pane count singular/plural.
         assert!(lines[4].contains("cpu   5.0%"), "cpu cell: {}", lines[4]);
         assert!(lines[4].contains("· 2 panes"), "notes: {}", lines[4]);
         assert_eq!(lines[5], ""); // blank between space and total
@@ -384,7 +383,11 @@ mod tests {
 
     #[test]
     fn render_unfocused_uses_no_branch_and_singular_pane() {
-        let out = render_styled(&[space("s", false, 0.0, 0.0, 1)], &Labels::default(), &plain());
+        let out = render_styled(
+            &[space("s", false, 0.0, 0.0, 1)],
+            &Labels::default(),
+            &plain(),
+        );
         let lines: Vec<&str> = out.split('\n').collect();
         assert_eq!(lines[2], "  ○ s"); // unfocused marker
         assert_eq!(lines[3], "      (no branch)");
@@ -446,7 +449,9 @@ mod tests {
         ];
         let mut last = 0;
         for key in order {
-            let at = out.find(&format!("\"{key}\"")).unwrap_or_else(|| panic!("missing {key}"));
+            let at = out
+                .find(&format!("\"{key}\""))
+                .unwrap_or_else(|| panic!("missing {key}"));
             assert!(at >= last, "key {key} out of order");
             last = at;
         }

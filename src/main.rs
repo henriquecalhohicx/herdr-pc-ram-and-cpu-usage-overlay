@@ -16,10 +16,6 @@
 //!
 //! Linux-only: relies on `/proc`. herdr injects HERDR_BIN_PATH / HERDR_PLUGIN_*.
 
-// Scaffold stage: modules are stubbed with `todo!()` bodies, so most items are
-// not yet reachable. These allows are removed as the modules get implemented.
-#![allow(dead_code, unused_variables)]
-
 mod collect;
 mod config;
 mod daemon;

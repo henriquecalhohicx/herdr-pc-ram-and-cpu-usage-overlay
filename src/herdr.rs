@@ -242,6 +242,11 @@ pub fn socket_path() -> crate::Result<PathBuf> {
 }
 
 /// The herdr CLI binary (`HERDR_BIN_PATH`, else `herdr`) for the fallback path.
+///
+/// Deliberately retained but not yet wired: every method currently goes over the
+/// socket, so this degraded CLI path has no caller. Kept as the documented
+/// escape hatch for a socket-unavailable fallback (see the module docs).
+#[allow(dead_code)]
 pub fn bin_path() -> String {
     crate::config::non_empty_env("HERDR_BIN_PATH").unwrap_or_else(|| "herdr".to_string())
 }

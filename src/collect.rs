@@ -247,7 +247,10 @@ pub fn aggregate_families(mut spaces: Vec<Space>) -> Vec<Space> {
         parent.ram_mb += ram_mb;
         parent.proc_count += proc_count;
         parent.pane_count += pane_count;
-        parent.worktree_labels.get_or_insert_with(Vec::new).push(label);
+        parent
+            .worktree_labels
+            .get_or_insert_with(Vec::new)
+            .push(label);
     }
 
     spaces.retain(|s| s.family_parent.is_none());
