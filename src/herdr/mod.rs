@@ -242,7 +242,7 @@ impl Herdr {
 
 /// Resolve the herdr socket path (`HERDR_SOCKET_PATH` → XDG → `~/.config` on Unix, required on Windows).
 pub fn socket_path() -> crate::Result<PathBuf> {
-    if let Ok(p) = std::env::var("HERDR_SOCKET_PATH") {
+    if let Some(p) = crate::config::non_empty_env("HERDR_SOCKET_PATH") {
         return Ok(PathBuf::from(p));
     }
     #[cfg(windows)]
@@ -251,10 +251,7 @@ pub fn socket_path() -> crate::Result<PathBuf> {
     }
     #[cfg(unix)]
     {
-        Ok(socket_path_from(
-            crate::config::non_empty_env("HERDR_SOCKET_PATH").as_deref(),
-            &crate::config::config_home(),
-        ))
+        Ok(socket_path_from(None, &crate::config::config_home()))
     }
 }
 
