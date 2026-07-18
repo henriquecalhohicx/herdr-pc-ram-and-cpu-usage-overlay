@@ -1,8 +1,8 @@
 //! Socket-native herdr JSON-RPC client (replaces the per-sample CLI shell-outs
 //! of `index.js` lines 82-124, hardened).
 //!
-//! One persistent [`UnixStream`] (paired with a [`BufReader`] over a cloned fd)
-//! speaks herdr's newline-delimited JSON-RPC:
+//! One persistent [`transport::Transport`] (paired with a [`BufReader`] over a
+//! cloned handle) speaks herdr's newline-delimited JSON-RPC:
 //!   request : `{"id":"<unique>","method":"<name>","params":{...}}\n`
 //!   success : `{"id":..,"result":{"type":"<snake>",...}}`
 //!   failure : `{"id":..,"error":{"code":..,"message":..}}`
@@ -20,10 +20,10 @@
 //! `~/.config/herdr/herdr.sock` (the XDG/home resolution is reused from
 //! [`crate::config`]).
 
+mod transport;
+
 use std::io::{self, BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -33,17 +33,13 @@ use crate::model::{
     WorktreeListResult,
 };
 
-/// Read/write timeout for a single JSON-RPC round-trip. Generous — herdr answers
-/// in milliseconds; this only guards against a wedged host hanging the plugin.
-const IO_TIMEOUT: Duration = Duration::from_secs(15);
-
 /// A live JSON-RPC connection to the herdr host.
 pub struct Herdr {
     /// Write half — requests are written here and flushed.
-    stream: UnixStream,
+    stream: transport::Transport,
     /// Read half — a `BufReader` over a cloned fd so we can `read_line` while the
     /// write half stays borrowable.
-    reader: BufReader<UnixStream>,
+    reader: BufReader<transport::Transport>,
     /// Socket path, retained so a broken connection can be re-opened.
     path: PathBuf,
     /// Monotonic request id counter (unique per connection, and across reconnects
@@ -59,10 +55,10 @@ pub fn connect() -> crate::Result<Herdr> {
 impl Herdr {
     /// Connect to `path` and wire up the read/write halves.
     fn open(path: PathBuf) -> crate::Result<Herdr> {
-        let stream = UnixStream::connect(&path)
+        let stream = transport::connect(&path)
             .map_err(|e| format!("cannot connect to herdr socket {}: {e}", path.display()))?;
-        configure(&stream)?;
-        let reader = BufReader::new(stream.try_clone()?);
+        transport::configure(&stream)?;
+        let reader = BufReader::new(transport::try_clone(&stream)?);
         Ok(Herdr {
             stream,
             reader,
@@ -73,14 +69,14 @@ impl Herdr {
 
     /// Re-open the socket after a broken pipe, replacing both halves.
     fn reconnect(&mut self) -> crate::Result<()> {
-        let stream = UnixStream::connect(&self.path).map_err(|e| {
+        let stream = transport::connect(&self.path).map_err(|e| {
             format!(
                 "cannot reconnect to herdr socket {}: {e}",
                 self.path.display()
             )
         })?;
-        configure(&stream)?;
-        self.reader = BufReader::new(stream.try_clone()?);
+        transport::configure(&stream)?;
+        self.reader = BufReader::new(transport::try_clone(&stream)?);
         self.stream = stream;
         Ok(())
     }
@@ -306,13 +302,6 @@ fn socket_path_from(explicit: Option<&str>, config_home: &Path) -> PathBuf {
         Some(path) => PathBuf::from(path),
         None => config_home.join("herdr").join("herdr.sock"),
     }
-}
-
-/// Apply the round-trip read/write timeouts to a freshly connected stream.
-fn configure(stream: &UnixStream) -> io::Result<()> {
-    stream.set_read_timeout(Some(IO_TIMEOUT))?;
-    stream.set_write_timeout(Some(IO_TIMEOUT))?;
-    Ok(())
 }
 
 #[cfg(test)]

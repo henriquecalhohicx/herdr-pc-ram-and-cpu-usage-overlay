@@ -27,7 +27,9 @@ windows-sys = { version = "0.59", features = [
   "Win32_System_SystemServices",
   "Win32_System_Pipes",
   "Win32_System_Console",
+  "Win32_System_IO",
   "Win32_Storage_FileSystem",
+  "Win32_Security",
 ] }
 
 [profile.release]
