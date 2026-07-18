@@ -10,7 +10,9 @@ use std::io::{self, IsTerminal, Write};
 
 use serde::Serialize;
 use serde_json::Number;
+#[cfg(unix)]
 use signal_hook::consts::{SIGINT, SIGTERM};
+#[cfg(unix)]
 use signal_hook::iterator::Signals;
 
 use crate::collect;
@@ -259,14 +261,36 @@ pub fn run_json(client: &mut Herdr) -> crate::Result<()> {
 /// `restore`); the main loop hides the cursor, then clears + redraws each frame,
 /// widening the CPU window from the quick first frame to `interval_ms`.
 pub fn run_interval(client: &mut Herdr, labels: &Labels, interval_ms: u64) -> crate::Result<()> {
-    let mut signals = Signals::new([SIGINT, SIGTERM])?;
-    std::thread::spawn(move || {
-        if signals.forever().next().is_some() {
+    #[cfg(unix)]
+    {
+        let mut signals = Signals::new([SIGINT, SIGTERM])?;
+        std::thread::spawn(move || {
+            if signals.forever().next().is_some() {
+                print!("\x1b[?25h"); // show cursor
+                let _ = io::stdout().flush();
+                std::process::exit(0);
+            }
+        });
+    }
+
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::BOOL;
+        use windows_sys::Win32::System::Console::SetConsoleCtrlHandler;
+
+        // SAFETY: extern "system" callback matching `PHANDLER_ROUTINE`'s exact
+        // signature; it captures no state, so it is sound to hand to the OS as
+        // a static function pointer.
+        unsafe extern "system" fn on_ctrl(_ctrl_type: u32) -> BOOL {
+            // Same terminal restore as the Unix path: show the cursor, then exit.
             print!("\x1b[?25h"); // show cursor
             let _ = io::stdout().flush();
             std::process::exit(0);
         }
-    });
+        // SAFETY: registers `on_ctrl` as the console control handler; `add = 1`
+        // appends it to the handler list rather than replacing it.
+        unsafe { SetConsoleCtrlHandler(Some(on_ctrl), 1) };
+    }
 
     let mut out = io::stdout();
     write!(out, "\x1b[?25l")?; // hide cursor
@@ -300,9 +324,16 @@ pub fn run_interval(client: &mut Herdr, labels: &Labels, interval_ms: u64) -> cr
     }
 }
 
+/// Zero-padded `HH:MM:SS`, shared by both platforms' `local_time_string` so
+/// their output is byte-identical for the same wall-clock reading.
+fn fmt_hms(h: u32, m: u32, s: u32) -> String {
+    format!("{h:02}:{m:02}:{s:02}")
+}
+
 /// Local wall-clock `HH:MM:SS` for the live-watch footer stamp (JS
 /// `new Date().toLocaleTimeString()`; the exact locale format is cosmetic and
 /// not part of any parity contract).
+#[cfg(unix)]
 fn local_time_string() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let secs = SystemTime::now()
@@ -312,7 +343,19 @@ fn local_time_string() -> String {
     // SAFETY: `localtime_r` fills the caller-owned `tm`; `secs` is a valid time_t.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     unsafe { libc::localtime_r(&secs, &mut tm) };
-    format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec)
+    fmt_hms(tm.tm_hour as u32, tm.tm_min as u32, tm.tm_sec as u32)
+}
+
+/// Windows counterpart of the Unix `local_time_string` above: same zero-padded
+/// `HH:MM:SS` output, sourced from `GetLocalTime` instead of `localtime_r`.
+#[cfg(windows)]
+fn local_time_string() -> String {
+    use windows_sys::Win32::Foundation::SYSTEMTIME;
+    use windows_sys::Win32::System::SystemInformation::GetLocalTime;
+    // SAFETY: `GetLocalTime` fills the caller-owned `SYSTEMTIME`.
+    let mut st: SYSTEMTIME = unsafe { std::mem::zeroed() };
+    unsafe { GetLocalTime(&mut st) };
+    fmt_hms(st.wHour as u32, st.wMinute as u32, st.wSecond as u32)
 }
 
 #[cfg(test)]
@@ -333,6 +376,14 @@ mod tests {
             ram_mb,
             ..Default::default()
         }
+    }
+
+    // ---- fmt_hms: zero-padded HH:MM:SS ---------------------------------------
+
+    #[test]
+    fn fmt_hms_zero_pads() {
+        assert_eq!(fmt_hms(9, 5, 3), "09:05:03");
+        assert_eq!(fmt_hms(23, 59, 59), "23:59:59");
     }
 
     // ---- fmt_ram: MB below 1024, GB at/above ---------------------------------
