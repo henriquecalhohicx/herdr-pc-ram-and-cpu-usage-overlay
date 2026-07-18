@@ -8,6 +8,7 @@
 //! `toggle` spawn or signal that daemon and sweep leftover statuses.
 
 use std::collections::HashSet;
+#[cfg(unix)]
 use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -15,7 +16,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+#[cfg(unix)]
 use signal_hook::consts::{SIGINT, SIGTERM};
+#[cfg(unix)]
 use signal_hook::iterator::Signals;
 
 use crate::collect::{self, PSEUDO_AGENT};
@@ -35,18 +38,48 @@ pub struct Tracked {
 
 /// PID of a live updater daemon, or `None` (missing pid file / dead process).
 ///
-/// Reads `<state_dir>/updater.pid` and probes the process with `kill(pid, 0)`
-/// (signal 0 checks existence only). Any failure — no file, unparsable content,
-/// a non-positive pid, or a dead/unsignalable process — reads as `None`, exactly
-/// as the JS `try/catch` around `process.kill(pid, 0)` did.
+/// Reads `<state_dir>/updater.pid` and probes the process for liveness (Unix:
+/// `kill(pid, 0)`, signal 0 checks existence only; Windows: open + exit-code
+/// check). Any failure — no file, unparsable content, a non-positive pid, or a
+/// dead/unprobeable process — reads as `None`, exactly as the JS `try/catch`
+/// around `process.kill(pid, 0)` did.
 pub fn daemon_pid() -> Option<u32> {
     let text = std::fs::read_to_string(config::pid_file()).ok()?;
     let pid: i32 = text.trim().parse().ok()?;
-    // SAFETY: `kill` with signal 0 performs no delivery, only a liveness probe.
-    if pid > 0 && unsafe { libc::kill(pid, 0) } == 0 {
+    if pid <= 0 {
+        return None;
+    }
+    if pid_alive(pid as u32) {
         Some(pid as u32)
     } else {
         None
+    }
+}
+
+/// Unix liveness probe: signal 0 performs no delivery, existence check only.
+#[cfg(unix)]
+fn pid_alive(pid: u32) -> bool {
+    // SAFETY: kill signal 0 is a liveness probe only.
+    unsafe { libc::kill(pid as i32, 0) == 0 }
+}
+
+/// Windows liveness probe: open the process and check it hasn't exited.
+#[cfg(windows)]
+fn pid_alive(pid: u32) -> bool {
+    use windows_sys::Win32::Foundation::{CloseHandle, FALSE, STILL_ACTIVE};
+    use windows_sys::Win32::System::Threading::{
+        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    // SAFETY: handle checked before use; code is caller-owned; handle closed once.
+    unsafe {
+        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+        if h.is_null() {
+            return false;
+        }
+        let mut code: u32 = 0;
+        let ok = GetExitCodeProcess(h, &mut code);
+        CloseHandle(h);
+        ok != 0 && code == STILL_ACTIVE as u32
     }
 }
 
@@ -83,13 +116,42 @@ pub fn run_daemon() -> crate::Result<()> {
     // Signal thread: on the first SIGINT/SIGTERM, win the shutdown race and clear
     // everything via a fresh connection, then exit. The main loop must not
     // re-report after this runs, so it parks once it observes `stopping`.
-    let mut signals = Signals::new([SIGINT, SIGTERM])?;
+    #[cfg(unix)]
     {
+        let mut signals = Signals::new([SIGINT, SIGTERM])?;
         let stopping = Arc::clone(&stopping);
         let tracked = Arc::clone(&tracked);
         thread::spawn(move || {
             if signals.forever().next().is_some() && !stopping.swap(true, Ordering::SeqCst) {
                 shutdown(herdr::connect().ok().as_mut(), &tracked);
+            }
+        });
+    }
+
+    // Windows equivalent: wait on the named stop-event that `disable_updater`
+    // sets, then flip the same `stopping` flag the main loop already checks each
+    // iteration — the loop's existing shutdown path (clear tracked statuses +
+    // title, unlink pid, exit) takes it from there, matching the Unix signal path.
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
+        use windows_sys::Win32::System::Threading::{CreateEventW, WaitForSingleObject, INFINITE};
+        let stopping = Arc::clone(&stopping);
+        let tracked = Arc::clone(&tracked);
+        let name = stop_event_name();
+        thread::spawn(move || {
+            // SAFETY: name is NUL-terminated; handle is waited on then closed once.
+            unsafe {
+                let h = CreateEventW(std::ptr::null(), 1, 0, name.as_ptr());
+                if h.is_null() {
+                    return;
+                }
+                if WaitForSingleObject(h, INFINITE) == WAIT_OBJECT_0
+                    && !stopping.swap(true, Ordering::SeqCst)
+                {
+                    shutdown(herdr::connect().ok().as_mut(), &tracked);
+                }
+                CloseHandle(h);
             }
         });
     }
@@ -145,11 +207,21 @@ pub fn enable_updater() -> crate::Result<()> {
         .stderr(Stdio::null());
     // SAFETY: `setsid` is async-signal-safe and the only action taken in the
     // forked child before exec; it starts a new session, detaching the daemon.
+    #[cfg(unix)]
     unsafe {
         cmd.pre_exec(|| match libc::setsid() {
             -1 => Err(std::io::Error::last_os_error()),
             _ => Ok(()),
         });
+    }
+    // Windows: no controlling terminal/session to detach from, but spawn fully
+    // background — no console window and not tied to this process's job/console.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(DETACHED_PROCESS | CREATE_NO_WINDOW);
     }
     cmd.spawn()?; // do not wait — the child outlives us and is reaped by init
 
@@ -161,9 +233,15 @@ pub fn enable_updater() -> crate::Result<()> {
 pub fn disable_updater() -> crate::Result<()> {
     if let Some(pid) = daemon_pid() {
         // The daemon clears its own statuses + title on shutdown; best-effort.
+        #[cfg(unix)]
         // SAFETY: `kill` merely posts SIGTERM to the pid; failure is ignored.
         unsafe {
             libc::kill(pid as i32, SIGTERM);
+        }
+        #[cfg(windows)]
+        {
+            let _ = pid; // no per-pid signal on Windows; the named event covers it
+            let _ = signal_stop_event(); // best-effort; sweep below still runs
         }
     }
 
@@ -290,6 +368,36 @@ pub fn set_title_totals(client: &mut Herdr, spaces: &[Space], labels: &Labels) {
 
 // ---- helpers ----------------------------------------------------------------
 
+/// Name of the named event used to signal the daemon to stop on Windows
+/// (Unix uses SIGTERM instead). Scoped to the plugin id so multiple herdr
+/// instances/configs don't collide.
+#[cfg(windows)]
+fn stop_event_name() -> Vec<u16> {
+    let name = format!(r"Local\herdr-space-usage-stop-{}", config::plugin_id());
+    name.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+/// Open-or-create the stop event and set it; the daemon's wait-thread (see
+/// `run_daemon`) wakes on this and flips the shared `stopping` flag. Best-effort:
+/// errors are swallowed by the caller since the belt-and-braces sweep in
+/// `disable_updater` still covers a dead/unresponsive daemon.
+#[cfg(windows)]
+fn signal_stop_event() -> std::io::Result<()> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{CreateEventW, SetEvent};
+    let name = stop_event_name();
+    // SAFETY: name is NUL-terminated; handle is checked and closed once.
+    unsafe {
+        let h = CreateEventW(std::ptr::null(), 1, 0, name.as_ptr());
+        if h.is_null() {
+            return Err(std::io::Error::last_os_error());
+        }
+        SetEvent(h);
+        CloseHandle(h);
+    }
+    Ok(())
+}
+
 /// Clear tracked statuses + title, unlink the pid file, and `exit(0)`.
 ///
 /// Shared by the signal thread (own connection) and the five-failure path (main
@@ -398,5 +506,16 @@ mod tests {
         let labels = Labels::default();
         assert!(status_line(&space(2.5, 0.0), &labels).starts_with("cpu 3%"));
         assert!(status_line(&space(2.4, 0.0), &labels).starts_with("cpu 2%"));
+    }
+
+    #[test]
+    fn pid_alive_true_for_own_pid() {
+        assert!(pid_alive(std::process::id()));
+    }
+
+    #[test]
+    fn pid_alive_false_for_implausible_pid() {
+        // Vanishingly unlikely to be a real pid on any platform under test.
+        assert!(!pid_alive(u32::MAX));
     }
 }
