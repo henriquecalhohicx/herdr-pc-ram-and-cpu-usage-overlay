@@ -16,17 +16,28 @@ name = "PC RAM & CPU Usage Overlay"
 version = "1.0.0"
 min_herdr_version = "0.7.0"
 description = "CPU and RAM usage per space, grouped under the branch name."
-platforms = ["linux"]
+platforms = ["linux", "windows"]
 
 # Commands are argv arrays (no shell) and run with the plugin dir as cwd,
 # per https://herdr.dev/docs/plugins/#trust-and-security
 
 # Compiled at install time: herdr runs this once with the plugin root as cwd.
-# The resulting ./target/release/space-usage rides into HERDR_PLUGIN_ROOT and is
-# what every pane/action command below invokes (relative to the plugin root).
+# The resulting ./target/release/space-usage (space-usage.exe on Windows)
+# rides into HERDR_PLUGIN_ROOT and is what every pane/action command below
+# invokes (relative to the plugin root). Windows needs the .exe suffix in the
+# command argv explicitly — herdr does not append it for a relative path.
+#
+# herdr 0.7.4 rejects duplicate pane/action ids even when the entries carry
+# disjoint `platforms` lists (verified via `herdr plugin link .`, error
+# duplicate_plugin_action_id). So the Windows pane/action variants below use
+# a distinct `-win`-suffixed id instead of reusing the Linux id.
 [[build]]
 command = ["cargo", "build", "--release"]
 platforms = ["linux"]
+
+[[build]]
+command = ["cargo", "build", "--release"]
+platforms = ["windows"]
 
 # Live, self-refreshing dashboard. Opened as a temporary zoomed overlay pane.
 [[panes]]
@@ -34,6 +45,14 @@ id = "dashboard"
 title = "Space usage"
 placement = "overlay"
 command = ["./target/release/space-usage", "--interval", "2"]
+platforms = ["linux"]
+
+[[panes]]
+id = "dashboard-win"
+title = "Space usage"
+placement = "overlay"
+command = ["./target/release/space-usage.exe", "--interval", "2"]
+platforms = ["windows"]
 
 # One-shot snapshot printed to stdout / plugin log.
 [[actions]]
@@ -41,6 +60,14 @@ id = "report"
 title = "Space usage report"
 contexts = ["workspace"]
 command = ["./target/release/space-usage", "--once"]
+platforms = ["linux"]
+
+[[actions]]
+id = "report-win"
+title = "Space usage report"
+contexts = ["workspace"]
+command = ["./target/release/space-usage.exe", "--once"]
+platforms = ["windows"]
 
 # Sidebar status updater: a background daemon that pushes each space's usage
 # as display-only metadata on a spare shell pane; the locally patched herdr
@@ -50,13 +77,34 @@ command = ["./target/release/space-usage", "--once"]
 id = "status-toggle"
 title = "Toggle sidebar usage status"
 command = ["./target/release/space-usage", "--toggle"]
+platforms = ["linux"]
+
+[[actions]]
+id = "status-toggle-win"
+title = "Toggle sidebar usage status"
+command = ["./target/release/space-usage.exe", "--toggle"]
+platforms = ["windows"]
 
 [[actions]]
 id = "status-enable"
 title = "Enable sidebar usage status"
 command = ["./target/release/space-usage", "--enable"]
+platforms = ["linux"]
+
+[[actions]]
+id = "status-enable-win"
+title = "Enable sidebar usage status"
+command = ["./target/release/space-usage.exe", "--enable"]
+platforms = ["windows"]
 
 [[actions]]
 id = "status-disable"
 title = "Disable sidebar usage status"
 command = ["./target/release/space-usage", "--disable"]
+platforms = ["linux"]
+
+[[actions]]
+id = "status-disable-win"
+title = "Disable sidebar usage status"
+command = ["./target/release/space-usage.exe", "--disable"]
+platforms = ["windows"]

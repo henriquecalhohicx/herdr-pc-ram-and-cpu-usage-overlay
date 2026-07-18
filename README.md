@@ -30,10 +30,12 @@ a glance which space is eating your machine.
 herdr plugin install ezcorp-org/herdr-pc-ram-and-cpu-usage-overlay
 ```
 
-Requirements: Linux (reads `/proc`) and the **Rust toolchain** (`cargo`) on the
-box hosting the herdr server — herdr compiles the plugin at install time via
-`cargo build --release`. Plugins run on the machine hosting the herdr server, so
-remote setups need these on the server box only. `node` is no longer required.
+Requirements: Linux (reads `/proc`) or Windows, and the **Rust toolchain**
+(`cargo`) on the box hosting the herdr server — herdr compiles the plugin at
+install time via `cargo build --release`. Plugins run on the machine hosting
+the herdr server, so remote setups need these on the server box only. `node`
+is no longer required. macOS is not supported — the CPU/RAM sampling relies on
+`/proc`, which macOS doesn't have.
 
 ## Usage
 
