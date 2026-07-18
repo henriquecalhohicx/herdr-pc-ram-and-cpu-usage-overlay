@@ -240,12 +240,22 @@ impl Herdr {
     }
 }
 
-/// Resolve the herdr socket path (`HERDR_SOCKET_PATH` → XDG → `~/.config`).
+/// Resolve the herdr socket path (`HERDR_SOCKET_PATH` → XDG → `~/.config` on Unix, required on Windows).
 pub fn socket_path() -> crate::Result<PathBuf> {
-    Ok(socket_path_from(
-        crate::config::non_empty_env("HERDR_SOCKET_PATH").as_deref(),
-        &crate::config::config_home(),
-    ))
+    if let Ok(p) = std::env::var("HERDR_SOCKET_PATH") {
+        return Ok(PathBuf::from(p));
+    }
+    #[cfg(windows)]
+    {
+        Err("HERDR_SOCKET_PATH not set (herdr injects the named-pipe name)".into())
+    }
+    #[cfg(unix)]
+    {
+        Ok(socket_path_from(
+            crate::config::non_empty_env("HERDR_SOCKET_PATH").as_deref(),
+            &crate::config::config_home(),
+        ))
+    }
 }
 
 /// The herdr CLI binary (`HERDR_BIN_PATH`, else `herdr`) for the fallback path.
