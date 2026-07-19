@@ -25,6 +25,7 @@ pub struct Config {
     pub mode: Mode,
     pub interval_seconds: u64,
     pub window_title_totals: bool,
+    pub cache_minutes: u64,
 }
 
 impl Default for Config {
@@ -33,6 +34,7 @@ impl Default for Config {
             mode: Mode::AgentsPanel,
             interval_seconds: 5,
             window_title_totals: true,
+            cache_minutes: crate::timer::DEFAULT_CACHE_MINUTES,
         }
     }
 }
@@ -157,6 +159,13 @@ fn parse_config(text: &str) -> Config {
                     }
                 }
             }
+            "cache_minutes" => {
+                if let Ok(n) = value.parse::<f64>() {
+                    if n >= 1.0 {
+                        cfg.cache_minutes = n as u64;
+                    }
+                }
+            }
             "window_title_totals" => cfg.window_title_totals = value != "false",
             _ => {}
         }
@@ -267,6 +276,21 @@ mod tests {
         assert_eq!(parse_config("interval_seconds = 0").interval_seconds, 5);
         assert_eq!(parse_config("interval_seconds = -3").interval_seconds, 5);
         assert_eq!(parse_config("interval_seconds = fast").interval_seconds, 5);
+    }
+
+    #[test]
+    fn config_cache_minutes_defaults_to_60() {
+        assert_eq!(parse_config("").cache_minutes, 60);
+    }
+
+    #[test]
+    fn config_cache_minutes_gates_on_ge_one() {
+        assert_eq!(parse_config("cache_minutes = 90").cache_minutes, 90);
+        assert_eq!(parse_config("cache_minutes = \"45\"").cache_minutes, 45);
+        // Below 1, zero, and non-numeric keep the default 60.
+        assert_eq!(parse_config("cache_minutes = 0").cache_minutes, 60);
+        assert_eq!(parse_config("cache_minutes = -5").cache_minutes, 60);
+        assert_eq!(parse_config("cache_minutes = soon").cache_minutes, 60);
     }
 
     #[test]
