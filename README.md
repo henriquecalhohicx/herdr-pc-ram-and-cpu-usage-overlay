@@ -115,23 +115,35 @@ rows = [
 
 Other agents carry no `$usage` token, so herdr elides that row for them.
 
-To also show the per-agent **cache countdown timer**, add a `$cache` token. Each
-`claude` agent entry then shows minutes until its ~1h prompt cache goes cold /
-the agent has been idle an hour — resetting to `60m` while it works and counting
-down once it goes idle, blocked, or needs input, ending at `⚠ 0m`:
+The per-agent cache timer shares the claude agent's line with cpu/ram and colours
+by urgency. Put cpu/ram (`$usage`) and the three tiered cache tokens on the agent
+row, styling each cache token's colour inline (herdr token colour is static per
+config, so the plugin swaps which token carries the value as time runs down):
 
 ```toml
 [ui.sidebar.agents]
 rows = [
-    ["state_icon", "workspace", "tab"],   # herdr defaults
-    ["agent"],                            #
-    ["$usage", "$cache"],                 # ← cpu/ram + attention/cache countdown
+    ["state_icon", "workspace", "tab"],
+    [
+        "agent",
+        "$usage",                                                # cpu/ram
+        { token = "$cache",       fg = "#a6e3a1" },              # > warn: green
+        { token = "$cache_warn",  fg = "#f9e2af" },              # <= warn: yellow
+        { token = "$cache_alert", fg = "#f38ba8", bold = true }, # <= alert: red
+    ],
 ]
 ```
 
-Only `claude` agents carry `$cache`; herdr elides the segment for other agents
-and while an agent is actively working. The window defaults to 60 minutes; set
-`cache_minutes` in the plugin `config.toml` to change it.
+This renders `claude · cpu 1% · ram 2% · cache 60m`, the countdown turning yellow
+at `cache_warn_minutes` and red at `cache_alert_minutes`. Only `claude` agents
+carry these tokens; a space with a claude agent shows cpu/ram on that line
+instead of a separate `usage` entry. Plugin `config.toml` keys:
+
+- `cache_minutes` (default 60) — the full window.
+- `cache_warn_minutes` (default 30) — yellow at/under this.
+- `cache_alert_minutes` (default 10) — red at/under this, and plays the sound.
+- `cache_alert_sound` — path to a `.wav` played once (Windows) when the timer
+  enters the alert tier; empty disables it.
 
 > The older note here said the spaces card "requires a patched herdr". That
 > predates herdr's native metadata-token surface; on builds that have it, the
