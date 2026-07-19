@@ -94,11 +94,20 @@ pub fn git_branch(cwd: Option<&str>) -> String {
         Some(c) if !c.is_empty() => c,
         _ => return String::new(),
     };
-    let output = Command::new("git")
-        .args(["-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"])
+    let mut cmd = Command::new("git");
+    cmd.args(["-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"])
         .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .output();
+        .stderr(Stdio::null());
+    // On Windows the daemon runs without a console (DETACHED_PROCESS), so each
+    // `git` child would otherwise pop a conhost window that flashes on screen
+    // every sample. CREATE_NO_WINDOW suppresses it. No-op / unneeded on Unix.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = cmd.output();
     match output {
         Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).trim().to_string(),
         _ => String::new(),
