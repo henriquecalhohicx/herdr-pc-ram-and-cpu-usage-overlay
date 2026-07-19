@@ -122,3 +122,17 @@ id = "status-disable-win"
 title = "Disable sidebar usage status"
 command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "$r=$env:HERDR_PLUGIN_ROOT; if($r.StartsWith('\\\\?\\')){$r=$r.Substring(4)}; & (Join-Path $r 'target\\release\\space-usage.exe') --disable"]
 platforms = ["windows"]
+
+# Always-on: auto-start the updater when a workspace is focused. This fires on
+# herdr launch for the initially-focused space (and on every switch), so the
+# usage row appears without a manual toggle. `--enable` is idempotent — it
+# no-ops when the daemon is already running — so repeated firing is harmless.
+[[events]]
+on = "workspace.focused"
+command = ["./target/release/space-usage", "--enable"]
+platforms = ["linux"]
+
+[[events]]
+on = "workspace.focused"
+command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "$r=$env:HERDR_PLUGIN_ROOT; if($r.StartsWith('\\\\?\\')){$r=$r.Substring(4)}; & (Join-Path $r 'target\\release\\space-usage.exe') --enable"]
+platforms = ["windows"]
