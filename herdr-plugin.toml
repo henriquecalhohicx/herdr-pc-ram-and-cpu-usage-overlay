@@ -14,6 +14,12 @@
 id = "ez-corp.space-usage"
 name = "PC RAM & CPU Usage Overlay"
 version = "1.0.0"
+# 0.7.0 covers the live pane, report action, and agents-panel pseudo-agent.
+# The native sidebar/agents token surface (the `$usage` custom token in the
+# spaces card / agents panel) additionally needs a herdr build with metadata
+# tokens (workspace.report_metadata / pane.report_metadata `tokens`) —
+# available on recent 0.7.x (verified on 0.7.4). Without it, those config rows
+# simply render nothing; the pane and report action still work.
 min_herdr_version = "0.7.0"
 description = "CPU and RAM usage per space, grouped under the branch name."
 platforms = ["linux", "windows"]

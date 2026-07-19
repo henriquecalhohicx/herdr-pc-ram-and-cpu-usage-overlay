@@ -191,34 +191,20 @@ impl Herdr {
         Ok(())
     }
 
-    /// `pane.report_metadata` with a TTL'd `custom_status` (sidebar mode).
-    pub fn report_metadata_status(
+    /// `pane.report_metadata` clearing a single custom token (sets it to `null`,
+    /// which herdr removes — the token map is `HashMap<String, Option<String>>`).
+    pub fn clear_pane_token(
         &mut self,
         pane_id: &str,
         source: &str,
-        custom_status: &str,
-        ttl_ms: u64,
+        key: &str,
     ) -> crate::Result<()> {
         self.call(
             "pane.report_metadata",
             &json!({
                 "pane_id": pane_id,
                 "source": source,
-                "custom_status": custom_status,
-                "ttl_ms": ttl_ms,
-            }),
-        )?;
-        Ok(())
-    }
-
-    /// `pane.report_metadata` with `clear_custom_status`.
-    pub fn clear_metadata_status(&mut self, pane_id: &str, source: &str) -> crate::Result<()> {
-        self.call(
-            "pane.report_metadata",
-            &json!({
-                "pane_id": pane_id,
-                "source": source,
-                "clear_custom_status": true,
+                "tokens": { key: Value::Null },
             }),
         )?;
         Ok(())
@@ -278,6 +264,24 @@ impl Herdr {
                 "source": source,
                 "tokens": token_map,
                 "ttl_ms": ttl_ms,
+            }),
+        )?;
+        Ok(())
+    }
+
+    /// `workspace.report_metadata` clearing a single custom token (sets `null`).
+    pub fn clear_workspace_token(
+        &mut self,
+        workspace_id: &str,
+        source: &str,
+        key: &str,
+    ) -> crate::Result<()> {
+        self.call(
+            "workspace.report_metadata",
+            &json!({
+                "workspace_id": workspace_id,
+                "source": source,
+                "tokens": { key: Value::Null },
             }),
         )?;
         Ok(())

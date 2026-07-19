@@ -34,6 +34,8 @@ pub struct Tracked {
     pub pseudo: HashSet<String>,
     /// Panes carrying TTL'd metadata statuses.
     pub metadata: HashSet<String>,
+    /// Workspaces carrying our TTL'd `usage` spaces-card token.
+    pub workspaces: HashSet<String>,
 }
 
 /// PID of a live updater daemon, or `None` (missing pid file / dead process).
@@ -168,18 +170,19 @@ pub fn run_daemon() -> crate::Result<()> {
                 {
                     let mut guard = tracked.lock().expect("tracked mutex poisoned");
                     push_statuses(&mut client, &spaces, &config, &labels, &mut guard);
+                    // Native spaces-card surface: push each space's usage as a
+                    // TTL'd `usage` workspace token. Renders in the sidebar spaces
+                    // card when the user adds a `$usage` row to their herdr sidebar
+                    // config (no patch needed on builds with metadata tokens).
+                    // Additive and independent of the agents-panel mode above.
+                    push_space_tokens(
+                        &mut client,
+                        &spaces,
+                        &labels,
+                        config.interval_seconds * 1000 * 3,
+                        &mut guard,
+                    );
                 }
-                // Native spaces-card surface: push each space's usage as a TTL'd
-                // `usage` workspace token. Renders in the sidebar spaces card when
-                // the user adds a `$usage` token row to their herdr sidebar config
-                // (no herdr patch needed on builds with metadata tokens). Additive
-                // and independent of the agents-panel mode above.
-                push_space_tokens(
-                    &mut client,
-                    &spaces,
-                    &labels,
-                    config.interval_seconds * 1000 * 3,
-                );
                 if config.window_title_totals {
                     set_title_totals(&mut client, &spaces, &labels);
                 }
@@ -261,8 +264,10 @@ pub fn disable_updater() -> crate::Result<()> {
     // If herdr is unavailable, metadata TTLs expire the statuses anyway.
     if let Ok(mut client) = herdr::connect() {
         if let Ok(spaces) = collect::collect_spaces(&mut client) {
+            let source = config::plugin_id();
             let mut sweep = Tracked::default();
             for sp in &spaces {
+                let _ = client.clear_workspace_token(&sp.id, &source, "usage");
                 sweep.pseudo.extend(sp.pseudo_panes.iter().cloned());
                 sweep.metadata.extend(sp.agent_panes.iter().cloned());
                 sweep.metadata.extend(sp.spare_panes.iter().cloned());
@@ -344,7 +349,7 @@ pub fn push_statuses(
         };
         for pane_id in targets {
             if client
-                .report_metadata_status(pane_id, &source, &status, ttl_ms)
+                .pane_report_tokens(pane_id, &source, &[("usage", &status)], ttl_ms)
                 .is_ok()
             {
                 tracked.metadata.insert(pane_id.clone());
@@ -353,14 +358,22 @@ pub fn push_statuses(
     }
 }
 
-/// Release every pseudo-agent and clear every metadata status in `tracked`.
+/// Release every pseudo-agent and clear every metadata token in `tracked`.
+///
+/// Pseudo-agent panes also carry a `$usage` pane token (agents-panel mode), so
+/// clear that too; metadata panes carry only the token. Tokens are TTL'd, so
+/// this is a promptness measure — a dead daemon's tokens still self-clear.
 pub fn clear_all(client: &mut Herdr, tracked: &Tracked) {
     let source = config::plugin_id();
     for pane_id in &tracked.pseudo {
         release_pseudo(client, pane_id, &source);
+        let _ = client.clear_pane_token(pane_id, &source, "usage");
     }
     for pane_id in &tracked.metadata {
-        let _ = client.clear_metadata_status(pane_id, &source);
+        let _ = client.clear_pane_token(pane_id, &source, "usage");
+    }
+    for workspace_id in &tracked.workspaces {
+        let _ = client.clear_workspace_token(workspace_id, &source, "usage");
     }
 }
 
@@ -386,11 +399,22 @@ pub fn set_title_totals(client: &mut Herdr, spaces: &[Space], labels: &Labels) {
 /// herdr renders in the spaces card wherever the user's sidebar config places a
 /// `$usage` token. Best-effort per space; a failure on one space is ignored so
 /// the others still update. The TTL self-clears the token if the daemon dies.
-pub fn push_space_tokens(client: &mut Herdr, spaces: &[Space], labels: &Labels, ttl_ms: u64) {
+pub fn push_space_tokens(
+    client: &mut Herdr,
+    spaces: &[Space],
+    labels: &Labels,
+    ttl_ms: u64,
+    tracked: &mut Tracked,
+) {
     let source = config::plugin_id();
     for sp in spaces {
         let status = status_line(sp, labels);
-        let _ = client.workspace_report_metadata(&sp.id, &source, &[("usage", &status)], ttl_ms);
+        if client
+            .workspace_report_metadata(&sp.id, &source, &[("usage", &status)], ttl_ms)
+            .is_ok()
+        {
+            tracked.workspaces.insert(sp.id.clone());
+        }
     }
 }
 
