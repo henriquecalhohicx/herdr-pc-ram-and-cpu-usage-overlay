@@ -75,13 +75,16 @@ mod imp {
     /// placeholder file and fails with a sharing violation). Prepend the
     /// `\\.\pipe\` prefix unless the caller already passed a pipe path.
     fn pipe_name(path: &Path) -> Vec<u16> {
-        let raw = path.to_string_lossy();
-        let full = if raw.starts_with(r"\\.\pipe\") || raw.starts_with(r"\\?\pipe\") {
-            raw.into_owned()
+        to_wide(&pipe_name_str(&path.to_string_lossy()))
+    }
+
+    /// Pure prefix logic behind [`pipe_name`], split out for unit testing.
+    fn pipe_name_str(raw: &str) -> String {
+        if raw.starts_with(r"\\.\pipe\") || raw.starts_with(r"\\?\pipe\") {
+            raw.to_string()
         } else {
             format!(r"\\.\pipe\{raw}")
-        };
-        to_wide(&full)
+        }
     }
 
     pub fn connect(path: &Path) -> io::Result<Transport> {
@@ -195,6 +198,25 @@ mod imp {
     #[cfg(test)]
     pub fn pipe_stream_from_raw_for_test(h: HANDLE) -> PipeStream {
         PipeStream(h)
+    }
+
+    #[cfg(test)]
+    mod name_tests {
+        use super::pipe_name_str;
+
+        #[test]
+        fn prepends_pipe_prefix_to_a_filesystem_path() {
+            assert_eq!(
+                pipe_name_str(r"C:\Users\me\AppData\Roaming\herdr\herdr.sock"),
+                r"\\.\pipe\C:\Users\me\AppData\Roaming\herdr\herdr.sock",
+            );
+        }
+
+        #[test]
+        fn leaves_an_existing_pipe_path_untouched() {
+            assert_eq!(pipe_name_str(r"\\.\pipe\herdr"), r"\\.\pipe\herdr");
+            assert_eq!(pipe_name_str(r"\\?\pipe\herdr"), r"\\?\pipe\herdr");
+        }
     }
 }
 

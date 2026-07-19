@@ -579,4 +579,12 @@ mod tests {
         // Vanishingly unlikely to be a real pid on any platform under test.
         assert!(!pid_alive(u32::MAX));
     }
+
+    #[test]
+    fn pid_alive_false_for_zero() {
+        // 0 is not a real process: on unix `kill(0, ..)` targets the caller's
+        // process group (would report a bogus "alive"); Windows OpenProcess(0)
+        // fails. Both must read as not-alive.
+        assert!(!pid_alive(0));
+    }
 }
