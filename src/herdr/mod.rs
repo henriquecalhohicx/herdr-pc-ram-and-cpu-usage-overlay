@@ -172,7 +172,11 @@ impl Herdr {
                 "source": source,
                 "agent": agent,
                 "state": state,
-                "custom_status": custom_status,
+                // herdr's PaneReportAgentParams carries the human-readable status
+                // in `message` (the 0.7.1-era `custom_status` name this plugin
+                // shipped with is silently ignored by 0.7.4+, so the cpu/ram text
+                // never rendered in the agents panel).
+                "message": custom_status,
             }),
         )?;
         Ok(())
