@@ -10,10 +10,11 @@ pub const DEFAULT_CACHE_MINUTES: u64 = 60;
 
 /// herdr `agent_status` values that mean the agent is ACTIVELY working — its
 /// prompt cache is refreshed each turn, so no countdown is shown. Every other
-/// value (idle, blocked, waiting-for-input, done, unknown) counts down.
-/// Confirmed live: an idle `claude` agent reports "idle"; the working string is
-/// confirmed during E2E (Task 6) and this set adjusted if herdr differs.
-pub const WORKING_STATES: &[&str] = &["working", "running", "busy", "active", "thinking"];
+/// value counts down. The full herdr `AgentStatus` enum is
+/// idle/working/blocked/done/unknown (confirmed via `herdr api schema` on
+/// 0.7.4), so `working` is the only active state; idle/blocked/done/unknown all
+/// count down.
+pub const WORKING_STATES: &[&str] = &["working"];
 
 /// Per-pane countdown state. `reset_at` is the instant the current 60m window
 /// began (refreshed to "now" every sample the agent is working).
@@ -76,11 +77,14 @@ mod tests {
 
     #[test]
     fn is_working_true_only_for_working_states() {
+        // herdr AgentStatus enum: only "working" is active; the rest count down.
         assert!(is_working(Some("working")));
-        assert!(is_working(Some("running")));
         assert!(!is_working(Some("idle")));
-        assert!(!is_working(Some("unknown")));
         assert!(!is_working(Some("blocked")));
+        assert!(!is_working(Some("done")));
+        assert!(!is_working(Some("unknown")));
+        // A value outside herdr's enum is treated as stopped, not working.
+        assert!(!is_working(Some("running")));
         assert!(!is_working(None));
     }
 
