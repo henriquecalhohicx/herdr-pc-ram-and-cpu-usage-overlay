@@ -20,6 +20,8 @@ version = "1.0.0"
 # tokens (workspace.report_metadata / pane.report_metadata `tokens`) —
 # available on recent 0.7.x (verified on 0.7.4). Without it, those config rows
 # simply render nothing; the pane and report action still work.
+# The per-agent cache countdown ($cache token in [ui.sidebar.agents]) resets to
+# `cache_minutes` (default 60) when a claude agent goes idle and ticks to 0.
 min_herdr_version = "0.7.0"
 description = "CPU and RAM usage per space, grouped under the branch name."
 platforms = ["linux", "windows"]

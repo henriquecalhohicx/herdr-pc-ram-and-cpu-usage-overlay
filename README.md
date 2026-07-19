@@ -115,6 +115,24 @@ rows = [
 
 Other agents carry no `$usage` token, so herdr elides that row for them.
 
+To also show the per-agent **cache countdown timer**, add a `$cache` token. Each
+`claude` agent entry then shows minutes until its ~1h prompt cache goes cold /
+the agent has been idle an hour — resetting to `60m` while it works and counting
+down once it goes idle, blocked, or needs input, ending at `⚠ 0m`:
+
+```toml
+[ui.sidebar.agents]
+rows = [
+    ["state_icon", "workspace", "tab"],   # herdr defaults
+    ["agent"],                            #
+    ["$usage", "$cache"],                 # ← cpu/ram + attention/cache countdown
+]
+```
+
+Only `claude` agents carry `$cache`; herdr elides the segment for other agents
+and while an agent is actively working. The window defaults to 60 minutes; set
+`cache_minutes` in the plugin `config.toml` to change it.
+
 > The older note here said the spaces card "requires a patched herdr". That
 > predates herdr's native metadata-token surface; on builds that have it, the
 > config above is all you need. The AGPL patch is no longer necessary.
