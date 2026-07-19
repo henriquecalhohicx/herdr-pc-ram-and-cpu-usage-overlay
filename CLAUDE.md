@@ -49,18 +49,40 @@ Guidance for working in this repo (a Rust herdr plugin: CPU/RAM per space).
   entries use `-win`-suffixed ids.
 - Event hooks: `[[events]]` with `on` (an `EventKind`, e.g. `workspace.focused`)
   + `command`. Event commands get the plugin env incl. `HERDR_PLUGIN_ROOT`.
-- **`pane.list` `agent_status`** (per-pane, snake_case): confirmed live values —
-  `idle` (a detected agent sitting idle), `unknown` (no detected agent). The
-  cache timer treats a working-set (`WORKING_STATES` in `src/timer.rs`,
-  `working`/`running`/`busy`/`active`/`thinking`) as actively-working and
-  everything else as stopped. Claude agents are `agent == "claude"`.
-- **Probe herdr live from a tool shell** (`HERDR_SOCKET_PATH` is only injected
-  into herdr-spawned panes, not tool shells): the server pipe is discoverable —
+- **`AgentStatus` enum** (authoritative via `herdr api schema`, 0.7.4):
+  `idle / working / blocked / done / unknown`. The cache timer treats only
+  `working` as actively-working (`WORKING_STATES = ["working"]` in `src/timer.rs`);
+  every other value counts down. Claude agents are `agent == "claude"`.
+- **Claude detection is process-based, not title-based.** herdr sets
+  `agent=Some(Claude)` while `claude` is the pane's live foreground process and
+  `None` when it exits (see herdr-server.log `agent changed ... process=claude`).
+  A summarised tab title (e.g. `✳ General conversation…`) does NOT lose detection.
+  Reliable state needs the integration hook installed:
+  `herdr integration install claude` (writes `~/.claude/hooks/herdr-agent-state.ps1`
+  + registers it) — check with `herdr integration status`.
+- **herdr rejects a `report_agent` claim over a pane with a detected agent**
+  (log `method=pane.report_agent outcome=error`). But if our daemon claims a
+  pane as the `usage` pseudo-agent *before* its agent is detected (a startup
+  race), the claim masks the agent indefinitely. The guard
+  (`collect::classify_pane` + `pane_has_agent_glyph`: raw `terminal_title` ≠
+  `terminal_title_stripped` ⇒ a real agent's glyph is present even under our
+  mask) routes such panes to `MaskedPseudo`, and the daemon releases the claim so
+  herdr re-surfaces the agent next loop.
+- **Token colour is static per config; use the token-swap pattern for dynamic
+  colour.** Sidebar rows accept inline token styles:
+  `{ token = "$cache", fg = "#RRGGBB", bold = true, dim = false }` (fg strict
+  `#RGB`/`#RRGGBB`; omitting fg inherits the default). The cache timer emits its
+  value under one of `cache`/`cache_warn`/`cache_alert` per tier and clears the
+  others, so the user styles three token names and only the active one shows.
+- **Probe / drive herdr from a tool shell** (`HERDR_SOCKET_PATH` is only injected
+  into herdr-spawned panes): the server pipe is discoverable —
   `[System.IO.Directory]::GetFiles("\\.\pipe\")` filtered on `herdr` gives
-  `...\AppData\Roaming\herdr\herdr.sock`. Connect a `NamedPipeClientStream` and
-  write one newline-terminated `{"id":..,"method":"pane.list","params":{"workspace_id":..}}`.
-  NOTE: our own `usage` pseudo-agent can claim the pane Claude Code runs in,
-  masking its `claude` detection — stop the daemon to see the real agent.
+  `...\AppData\Roaming\herdr\herdr.sock`; connect a `NamedPipeClientStream` and
+  write one newline-terminated `{"id":..,"method":"pane.list","params":{..}}`.
+  CLI levers: `herdr plugin action invoke <id> --plugin <pid>` (e.g.
+  `status-enable-win`/`status-disable-win` to start/stop the daemon canonically),
+  `herdr server reload-config` (apply sidebar-row edits), `herdr api schema`,
+  `herdr plugin config-dir <pid>`.
 
 ## Layout
 

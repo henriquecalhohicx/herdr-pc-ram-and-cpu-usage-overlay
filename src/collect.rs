@@ -56,20 +56,11 @@ pub fn collect_spaces(client: &mut Herdr) -> crate::Result<Vec<Space>> {
                 pane.terminal_title.as_deref(),
                 pane.terminal_title_stripped.as_deref(),
             );
-            // Classify: our pseudo-agent, then any real (non-empty) agent, else a
-            // plain shell pane. An empty-string agent is falsy in JS → spare.
-            match pane.agent.as_deref() {
-                // Our "usage" claim, but a real agent is under it → release it and
-                // never reuse it as a host (would keep masking the agent).
-                Some(PSEUDO_AGENT) if real_agent_glyph => {
-                    masked_pseudo_panes.push(pane.pane_id.clone())
-                }
-                Some(PSEUDO_AGENT) => pseudo_panes.push(pane.pane_id.clone()),
-                Some(agent) if !agent.is_empty() => agent_panes.push(pane.pane_id.clone()),
-                // No reported agent, but a glyph says one is there (detection lag):
-                // treat as an agent pane so we never claim it as a usage host.
-                _ if real_agent_glyph => agent_panes.push(pane.pane_id.clone()),
-                _ => spare_panes.push(pane.pane_id.clone()),
+            match classify_pane(pane.agent.as_deref(), real_agent_glyph) {
+                PaneBucket::MaskedPseudo => masked_pseudo_panes.push(pane.pane_id.clone()),
+                PaneBucket::Pseudo => pseudo_panes.push(pane.pane_id.clone()),
+                PaneBucket::Agent => agent_panes.push(pane.pane_id.clone()),
+                PaneBucket::Spare => spare_panes.push(pane.pane_id.clone()),
             }
             // Track claude agents for the per-agent cache countdown timer.
             if pane.agent.as_deref() == Some("claude") {
@@ -109,6 +100,34 @@ pub fn collect_spaces(client: &mut Herdr) -> crate::Result<Vec<Space>> {
         });
     }
     Ok(spaces)
+}
+
+/// Which status-hosting bucket a pane belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaneBucket {
+    /// Our "usage" pseudo-agent — a host for the space's cpu/ram.
+    Pseudo,
+    /// Our "usage" claim sitting over a real agent (glyph present) — release it,
+    /// never reuse it, so herdr can re-surface the real agent.
+    MaskedPseudo,
+    /// A real agent pane (reported, or a glyph betrays one under detection lag) —
+    /// never claim it as a usage host.
+    Agent,
+    /// A plain shell pane — a candidate usage host.
+    Spare,
+}
+
+/// Classify a pane from its reported `agent` and whether a herdr agent-title
+/// glyph is present. Pure, so the guard logic is unit-testable without a live
+/// herdr. An empty-string agent is treated as absent (JS-falsy parity).
+pub fn classify_pane(agent: Option<&str>, has_glyph: bool) -> PaneBucket {
+    match agent {
+        Some(PSEUDO_AGENT) if has_glyph => PaneBucket::MaskedPseudo,
+        Some(PSEUDO_AGENT) => PaneBucket::Pseudo,
+        Some(a) if !a.is_empty() => PaneBucket::Agent,
+        _ if has_glyph => PaneBucket::Agent,
+        _ => PaneBucket::Spare,
+    }
 }
 
 /// Whether a pane carries a herdr agent-title glyph — i.e. herdr detects a real
@@ -390,6 +409,23 @@ mod tests {
     fn git_branch_empty_for_none_or_blank_cwd() {
         assert_eq!(git_branch(None), "");
         assert_eq!(git_branch(Some("")), "");
+    }
+
+    #[test]
+    fn classify_pane_buckets_by_agent_and_glyph() {
+        // Our "usage" claim over a real agent (glyph) → release it.
+        assert_eq!(classify_pane(Some("usage"), true), PaneBucket::MaskedPseudo);
+        // Our plain "usage" pseudo-agent host.
+        assert_eq!(classify_pane(Some("usage"), false), PaneBucket::Pseudo);
+        // A reported real agent, with or without a glyph.
+        assert_eq!(classify_pane(Some("claude"), false), PaneBucket::Agent);
+        assert_eq!(classify_pane(Some("claude"), true), PaneBucket::Agent);
+        // No reported agent but a glyph = detection lag → treat as an agent.
+        assert_eq!(classify_pane(None, true), PaneBucket::Agent);
+        // Plain shell.
+        assert_eq!(classify_pane(None, false), PaneBucket::Spare);
+        // Empty-string agent is absent → spare (not a real agent).
+        assert_eq!(classify_pane(Some(""), false), PaneBucket::Spare);
     }
 
     #[test]
