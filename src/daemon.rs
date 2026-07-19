@@ -317,6 +317,11 @@ pub fn push_statuses(
                     .report_agent(pane, &source, PSEUDO_AGENT, "idle", &status)
                     .is_ok()
                 {
+                    // Also expose the usage as a `$usage` pane token so it renders
+                    // in the agents panel for users who add a `$usage` row to
+                    // `[ui.sidebar.agents]` (the compact panel doesn't show the
+                    // report_agent `message`; a token row does). TTL'd like above.
+                    let _ = client.pane_report_tokens(pane, &source, &[("usage", &status)], ttl_ms);
                     tracked.pseudo.insert(pane.clone());
                     continue; // dedicated panel entry covers this space
                 }

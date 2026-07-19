@@ -100,6 +100,21 @@ rows = [
 Enable the updater (`status-toggle` / `status-toggle-win` on Windows) and
 `herdr config` reload. The token self-clears (TTL) if the daemon stops.
 
+To show it in the **agents panel** instead (on the `usage` pseudo-agent entry),
+the daemon also pushes `$usage` as a pane token in agents-panel mode; add it to
+`[ui.sidebar.agents]`:
+
+```toml
+[ui.sidebar.agents]
+rows = [
+    ["state_icon", "workspace", "tab"],   # herdr defaults
+    ["agent"],                            #
+    ["$usage"],                           # ← usage entry's cpu/ram
+]
+```
+
+Other agents carry no `$usage` token, so herdr elides that row for them.
+
 > The older note here said the spaces card "requires a patched herdr". That
 > predates herdr's native metadata-token surface; on builds that have it, the
 > config above is all you need. The AGPL patch is no longer necessary.

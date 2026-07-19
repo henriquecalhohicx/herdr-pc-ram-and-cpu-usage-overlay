@@ -224,6 +224,35 @@ impl Herdr {
         Ok(())
     }
 
+    /// `pane.report_metadata` — set TTL'd custom sidebar tokens on a pane.
+    ///
+    /// herdr renders these as `AgentSidebarToken::Custom` entries in the agents
+    /// panel: a config row token `$<key>` displays the value pushed here on that
+    /// pane's agent entry. Same `(key, value)` / TTL semantics as
+    /// [`Self::workspace_report_metadata`], scoped to a pane instead of a space.
+    pub fn pane_report_tokens(
+        &mut self,
+        pane_id: &str,
+        source: &str,
+        tokens: &[(&str, &str)],
+        ttl_ms: u64,
+    ) -> crate::Result<()> {
+        let token_map: serde_json::Map<String, Value> = tokens
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), Value::String((*v).to_string())))
+            .collect();
+        self.call(
+            "pane.report_metadata",
+            &json!({
+                "pane_id": pane_id,
+                "source": source,
+                "tokens": token_map,
+                "ttl_ms": ttl_ms,
+            }),
+        )?;
+        Ok(())
+    }
+
     /// `workspace.report_metadata` — set TTL'd custom sidebar tokens on a space.
     ///
     /// herdr renders these as `SpaceSidebarToken::Custom` entries in the spaces
