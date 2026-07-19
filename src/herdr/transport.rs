@@ -66,8 +66,26 @@ mod imp {
         s.encode_utf16().chain(std::iter::once(0)).collect()
     }
 
+    /// Build the named-pipe path from `HERDR_SOCKET_PATH`.
+    ///
+    /// herdr injects `HERDR_SOCKET_PATH` as a filesystem-style path (e.g.
+    /// `C:\Users\..\herdr.sock`, alongside a placeholder file of that name), but
+    /// the actual Windows IPC endpoint is the named pipe `\\.\pipe\<that path>`
+    /// (verified against a live herdr 0.7.4: opening the bare path lands on the
+    /// placeholder file and fails with a sharing violation). Prepend the
+    /// `\\.\pipe\` prefix unless the caller already passed a pipe path.
+    fn pipe_name(path: &Path) -> Vec<u16> {
+        let raw = path.to_string_lossy();
+        let full = if raw.starts_with(r"\\.\pipe\") || raw.starts_with(r"\\?\pipe\") {
+            raw.into_owned()
+        } else {
+            format!(r"\\.\pipe\{raw}")
+        };
+        to_wide(&full)
+    }
+
     pub fn connect(path: &Path) -> io::Result<Transport> {
-        let name = to_wide(&path.to_string_lossy());
+        let name = pipe_name(path);
         loop {
             // SAFETY: name is NUL-terminated; return value checked.
             let h = unsafe {

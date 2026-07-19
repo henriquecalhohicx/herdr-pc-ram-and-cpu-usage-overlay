@@ -190,6 +190,28 @@ On Windows, against a live herdr instance:
    disable and self-clear (TTL) if the daemon is killed.
 5. Linux build still compiles and passes its tests unchanged (`cargo test`).
 
+## E2E corrections (verified against live herdr 0.7.4 on Windows)
+
+Two facts the pre-implementation research got wrong, found during end-to-end
+testing and fixed:
+
+1. **Named-pipe name.** `HERDR_SOCKET_PATH` is injected as a filesystem-style
+   path (e.g. `C:\Users\..\herdr.sock`, with a placeholder file of that name),
+   but the actual IPC endpoint is the named pipe `\\.\pipe\<that path>`. The
+   Windows transport must prepend `\\.\pipe\` (opening the bare path lands on the
+   placeholder file → `ERROR_SHARING_VIOLATION`). The transport mechanism itself
+   (named pipe, `CreateFileW`) was correct — only the name derivation was wrong.
+2. **Command spawn.** herdr cannot launch a `./`-relative executable on Windows:
+   `CreateProcess` resolves a relative application path against the caller's
+   (herdr's) cwd, not the child's working directory, so
+   `./target/release/space-usage.exe` fails with "path not found". The Windows
+   manifest entries go through `cmd /c "target\release\space-usage.exe <flag>"`,
+   which inherits the plugin-root cwd herdr sets and resolves the path itself.
+
+Both are covered by a full live E2E: report action prints per-space CPU/RAM over
+the pipe; daemon enable/disable/toggle spawns detached and stops via the named
+stop-event.
+
 ## Risks / open items
 
 1. herdr manifest per-platform command / `.exe` resolution (§6) — verify first.
