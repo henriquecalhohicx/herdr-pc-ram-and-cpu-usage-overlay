@@ -49,6 +49,18 @@ Guidance for working in this repo (a Rust herdr plugin: CPU/RAM per space).
   entries use `-win`-suffixed ids.
 - Event hooks: `[[events]]` with `on` (an `EventKind`, e.g. `workspace.focused`)
   + `command`. Event commands get the plugin env incl. `HERDR_PLUGIN_ROOT`.
+- **`pane.list` `agent_status`** (per-pane, snake_case): confirmed live values —
+  `idle` (a detected agent sitting idle), `unknown` (no detected agent). The
+  cache timer treats a working-set (`WORKING_STATES` in `src/timer.rs`,
+  `working`/`running`/`busy`/`active`/`thinking`) as actively-working and
+  everything else as stopped. Claude agents are `agent == "claude"`.
+- **Probe herdr live from a tool shell** (`HERDR_SOCKET_PATH` is only injected
+  into herdr-spawned panes, not tool shells): the server pipe is discoverable —
+  `[System.IO.Directory]::GetFiles("\\.\pipe\")` filtered on `herdr` gives
+  `...\AppData\Roaming\herdr\herdr.sock`. Connect a `NamedPipeClientStream` and
+  write one newline-terminated `{"id":..,"method":"pane.list","params":{"workspace_id":..}}`.
+  NOTE: our own `usage` pseudo-agent can claim the pane Claude Code runs in,
+  masking its `claude` detection — stop the daemon to see the real agent.
 
 ## Layout
 
