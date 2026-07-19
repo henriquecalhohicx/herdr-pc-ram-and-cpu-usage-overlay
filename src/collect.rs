@@ -13,7 +13,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use crate::herdr::Herdr;
-use crate::model::Space;
+use crate::model::{ClaudePane, Space};
 use crate::proc;
 
 /// Pseudo-agent label used to mark our agents-panel entries (agents-panel mode)
@@ -39,6 +39,7 @@ pub fn collect_spaces(client: &mut Herdr) -> crate::Result<Vec<Space>> {
         let mut agent_panes = Vec::new(); // panes with a real agent — sidebar rows
         let mut spare_panes = Vec::new(); // plain shell panes — pseudo-agent hosts
         let mut pseudo_panes = Vec::new(); // panes already carrying our "usage" agent
+        let mut claude_panes = Vec::new(); // claude agent panes + status (cache timer)
         let mut cwd: Option<&str> = None;
 
         for pane in &panes {
@@ -54,6 +55,13 @@ pub fn collect_spaces(client: &mut Herdr) -> crate::Result<Vec<Space>> {
                 Some(PSEUDO_AGENT) => pseudo_panes.push(pane.pane_id.clone()),
                 Some(agent) if !agent.is_empty() => agent_panes.push(pane.pane_id.clone()),
                 _ => spare_panes.push(pane.pane_id.clone()),
+            }
+            // Track claude agents for the per-agent cache countdown timer.
+            if pane.agent.as_deref() == Some("claude") {
+                claude_panes.push(ClaudePane {
+                    pane_id: pane.pane_id.clone(),
+                    status: pane.agent_status.clone(),
+                });
             }
             // Best-effort shell PID; a pane that just closed errors and is skipped.
             if let Ok(info) = client.process_info(&pane.pane_id) {
@@ -80,6 +88,7 @@ pub fn collect_spaces(client: &mut Herdr) -> crate::Result<Vec<Space>> {
             agent_panes,
             spare_panes,
             pseudo_panes,
+            claude_panes,
             ..Default::default()
         });
     }
@@ -232,7 +241,7 @@ pub fn aggregate_families(mut spaces: Vec<Space>) -> Vec<Space> {
         // Snapshot the child's contribution (immutable borrow ends here) before
         // taking a `&mut` to the parent — `parent_idx != i` always, but this also
         // sidesteps the borrow checker cleanly.
-        let (cpu, ram_mb, proc_count, pane_count, label) = {
+        let (cpu, ram_mb, proc_count, pane_count, label, claude_panes) = {
             let child = &spaces[i];
             (
                 child.cpu,
@@ -240,6 +249,7 @@ pub fn aggregate_families(mut spaces: Vec<Space>) -> Vec<Space> {
                 child.proc_count,
                 child.pane_count,
                 child.label.clone(),
+                child.claude_panes.clone(),
             )
         };
         let parent = &mut spaces[parent_idx];
@@ -247,6 +257,7 @@ pub fn aggregate_families(mut spaces: Vec<Space>) -> Vec<Space> {
         parent.ram_mb += ram_mb;
         parent.proc_count += proc_count;
         parent.pane_count += pane_count;
+        parent.claude_panes.extend(claude_panes);
         parent
             .worktree_labels
             .get_or_insert_with(Vec::new)
@@ -350,5 +361,35 @@ mod tests {
     fn git_branch_empty_for_none_or_blank_cwd() {
         assert_eq!(git_branch(None), "");
         assert_eq!(git_branch(Some("")), "");
+    }
+
+    #[test]
+    fn aggregate_folds_child_claude_panes_into_parent() {
+        use crate::model::ClaudePane;
+        let mut parent = space("p", 0.0, 0.0, 0, 1);
+        parent.claude_panes = vec![ClaudePane {
+            pane_id: "p:p1".to_string(),
+            status: Some("idle".to_string()),
+        }];
+        let mut child = space("c", 0.0, 0.0, 0, 1);
+        child.family_parent = Some("p".to_string());
+        child.claude_panes = vec![ClaudePane {
+            pane_id: "c:p1".to_string(),
+            status: Some("working".to_string()),
+        }];
+
+        let out = aggregate_families(vec![parent, child]);
+
+        assert_eq!(out.len(), 1);
+        let ids: Vec<&str> = out[0]
+            .claude_panes
+            .iter()
+            .map(|c| c.pane_id.as_str())
+            .collect();
+        assert_eq!(
+            ids,
+            vec!["p:p1", "c:p1"],
+            "child claude panes fold into parent"
+        );
     }
 }
