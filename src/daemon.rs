@@ -61,8 +61,17 @@ pub fn daemon_pid() -> Option<u32> {
 /// Unix liveness probe: signal 0 performs no delivery, existence check only.
 #[cfg(unix)]
 fn pid_alive(pid: u32) -> bool {
-    // SAFETY: kill signal 0 is a liveness probe only.
-    unsafe { libc::kill(pid as i32, 0) == 0 }
+    // Guard the special `kill` targets: 0 is the caller's process group, and any
+    // value that doesn't fit a positive i32 (e.g. `u32::MAX as i32 == -1`) is a
+    // broadcast — both would report a bogus pid as "alive". daemon_pid() only
+    // passes validated positive pids; this keeps the probe honest regardless.
+    match i32::try_from(pid) {
+        Ok(pid) if pid > 0 => {
+            // SAFETY: kill signal 0 is a liveness probe only.
+            unsafe { libc::kill(pid, 0) == 0 }
+        }
+        _ => false,
+    }
 }
 
 /// Windows liveness probe: open the process and check it hasn't exited.

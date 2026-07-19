@@ -10,6 +10,7 @@ env:
 jobs:
   build:
     strategy:
+      fail-fast: false # report both OS legs independently, don't cancel on first failure
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
