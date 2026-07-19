@@ -64,7 +64,7 @@ fn run() -> Result<()> {
         return render::run_json(&mut client);
     }
 
-    let labels = config::load_herdr_labels();
+    let labels = config::effective_labels(&config::load_config(), config::load_herdr_labels());
     if has_flag(&args, "--once") {
         return render::run_once(&mut client, &labels);
     }

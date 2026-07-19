@@ -29,6 +29,13 @@ pub struct Config {
     pub cache_warn_minutes: u64,
     pub cache_alert_minutes: u64,
     pub cache_alert_sound: String,
+    /// Override the cpu/ram labels (else herdr's `[ui]` labels are used). Lets a
+    /// narrow sidebar use short text or icons on the agent line.
+    pub cpu_label: Option<String>,
+    pub ram_label: Option<String>,
+    /// Prefix on the cache countdown value, e.g. `"cache 42m"`; set to an icon to
+    /// save width. Empty renders just `"42m"`.
+    pub cache_label: String,
 }
 
 impl Default for Config {
@@ -41,6 +48,9 @@ impl Default for Config {
             cache_warn_minutes: 30,
             cache_alert_minutes: 10,
             cache_alert_sound: String::new(),
+            cpu_label: None,
+            ram_label: None,
+            cache_label: "cache".to_string(),
         }
     }
 }
@@ -77,6 +87,15 @@ pub fn load_herdr_labels() -> Labels {
     match std::fs::read_to_string(herdr_config_path()) {
         Ok(text) => parse_herdr_labels(&text),
         Err(_) => Labels::default(), // no herdr config readable — defaults
+    }
+}
+
+/// The cpu/ram labels to render: the plugin `config.toml` override wins, else the
+/// herdr `[ui]` labels. Pure over its inputs so it is unit-testable.
+pub fn effective_labels(config: &Config, herdr: Labels) -> Labels {
+    Labels {
+        cpu: config.cpu_label.clone().unwrap_or(herdr.cpu),
+        ram: config.ram_label.clone().unwrap_or(herdr.ram),
     }
 }
 
@@ -187,6 +206,9 @@ fn parse_config(text: &str) -> Config {
                 }
             }
             "cache_alert_sound" => cfg.cache_alert_sound = value.to_string(),
+            "cpu_label" => cfg.cpu_label = Some(value.to_string()),
+            "ram_label" => cfg.ram_label = Some(value.to_string()),
+            "cache_label" => cfg.cache_label = value.to_string(),
             "window_title_totals" => cfg.window_title_totals = value != "false",
             _ => {}
         }
@@ -344,6 +366,37 @@ mod tests {
             cfg.cache_alert_sound,
             "C:\\\\stuff\\\\sounds\\\\wav\\\\droid.wav"
         );
+    }
+
+    #[test]
+    fn config_label_overrides_parse_and_default() {
+        let cfg = parse_config("");
+        assert!(cfg.cpu_label.is_none());
+        assert!(cfg.ram_label.is_none());
+        assert_eq!(cfg.cache_label, "cache");
+
+        let cfg = parse_config("cpu_label = CPU\nram_label = MEM\ncache_label = \"⏳\"");
+        assert_eq!(cfg.cpu_label.as_deref(), Some("CPU"));
+        assert_eq!(cfg.ram_label.as_deref(), Some("MEM"));
+        assert_eq!(cfg.cache_label, "⏳");
+    }
+
+    #[test]
+    fn effective_labels_prefers_override_else_herdr() {
+        let herdr = Labels {
+            cpu: "cpu".to_string(),
+            ram: "ram".to_string(),
+        };
+        let mut cfg = Config::default();
+        // No override → fall back to the herdr labels.
+        let l = effective_labels(&cfg, herdr.clone());
+        assert_eq!(l.cpu, "cpu");
+        assert_eq!(l.ram, "ram");
+        // Override wins.
+        cfg.cpu_label = Some("⚡".to_string());
+        let l = effective_labels(&cfg, herdr);
+        assert_eq!(l.cpu, "⚡");
+        assert_eq!(l.ram, "ram"); // ram still falls back
     }
 
     #[test]

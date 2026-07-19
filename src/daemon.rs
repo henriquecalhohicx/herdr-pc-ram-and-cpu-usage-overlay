@@ -113,7 +113,9 @@ pub fn run_daemon() -> crate::Result<()> {
     std::fs::write(config::pid_file(), format!("{}\n", std::process::id()))?;
 
     let config = config::load_config();
-    let labels = config::load_herdr_labels();
+    // Plugin-config label overrides win over herdr's `[ui]` labels (short/icon
+    // labels for a narrow sidebar); unset falls back to herdr's.
+    let labels = config::effective_labels(&config, config::load_herdr_labels());
 
     let mut client = match herdr::connect() {
         Ok(client) => client,
@@ -527,7 +529,7 @@ pub fn push_cache_tokens(
                 config.cache_alert_minutes,
             );
             let active = timer::tier_token_key(t);
-            let label = timer::cache_label(remaining);
+            let label = timer::cache_label(&config.cache_label, remaining);
             let _ = client.pane_report_tokens(&cp.pane_id, &source, &[(active, &label)], ttl_ms);
             for key in timer::CACHE_TOKEN_KEYS.iter().filter(|k| **k != active) {
                 let _ = client.clear_pane_token(&cp.pane_id, &source, key);

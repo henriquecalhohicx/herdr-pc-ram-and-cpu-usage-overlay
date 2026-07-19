@@ -86,10 +86,15 @@ pub fn tier_token_key(t: Tier) -> &'static str {
     }
 }
 
-/// The displayed token value, e.g. `"cache 42m"` … `"cache 0m"`. Colour (not an
-/// icon) carries the alert, so there is no `⚠`.
-pub fn cache_label(remaining_minutes: u64) -> String {
-    format!("cache {remaining_minutes}m")
+/// The displayed token value: `label` prefix + minutes, e.g. `"cache 42m"` or
+/// `"⏳ 42m"`. An empty `label` renders just `"42m"`. Colour (not an icon)
+/// carries the alert, so there is no `⚠`.
+pub fn cache_label(label: &str, remaining_minutes: u64) -> String {
+    if label.is_empty() {
+        format!("{remaining_minutes}m")
+    } else {
+        format!("{label} {remaining_minutes}m")
+    }
 }
 
 /// Whether to play the alert sound on this sample, updating the debounce flag.
@@ -207,10 +212,13 @@ mod tests {
     }
 
     #[test]
-    fn cache_label_is_prefixed_and_covers_zero() {
-        assert_eq!(cache_label(42), "cache 42m");
-        assert_eq!(cache_label(1), "cache 1m");
-        assert_eq!(cache_label(0), "cache 0m");
+    fn cache_label_prefixes_label_and_covers_zero() {
+        assert_eq!(cache_label("cache", 42), "cache 42m");
+        assert_eq!(cache_label("cache", 0), "cache 0m");
+        assert_eq!(cache_label("⏳", 42), "⏳ 42m");
+        // Empty label → bare minutes.
+        assert_eq!(cache_label("", 42), "42m");
+        assert_eq!(cache_label("", 0), "0m");
     }
 
     #[test]

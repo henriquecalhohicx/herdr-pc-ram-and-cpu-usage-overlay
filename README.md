@@ -144,6 +144,11 @@ instead of a separate `usage` entry. Plugin `config.toml` keys:
 - `cache_alert_minutes` (default 10) — red at/under this, and plays the sound.
 - `cache_alert_sound` — path to a `.wav` played once (Windows) when the timer
   enters the alert tier; empty disables it.
+- `cpu_label` / `ram_label` — override the cpu/ram labels (default: herdr's
+  `[ui]` `cpu_label`/`ram_label`). Set short text or an icon to fit a narrow
+  sidebar, e.g. `cpu_label = "⚡"`.
+- `cache_label` — prefix on the countdown value (default `"cache"`), e.g.
+  `cache_label = "⏳"` renders `⏳ 60m`; empty renders just `60m`.
 
 > The older note here said the spaces card "requires a patched herdr". That
 > predates herdr's native metadata-token surface; on builds that have it, the
