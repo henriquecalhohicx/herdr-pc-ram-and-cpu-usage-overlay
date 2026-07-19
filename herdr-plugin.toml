@@ -25,12 +25,15 @@ platforms = ["linux", "windows"]
 # The resulting ./target/release/space-usage (space-usage.exe on Windows) is
 # what every pane/action command below invokes.
 #
-# Linux invokes the binary directly with a relative path. Windows CANNOT: its
-# CreateProcess resolves a relative executable against the CALLER's (herdr's)
-# working directory, not the child's, so `./target/release/space-usage.exe`
-# fails with "path not found" (verified on herdr 0.7.4). The Windows variants
-# therefore go through `cmd /c`, which inherits the plugin-root cwd herdr sets
-# and resolves the relative path itself.
+# Linux invokes the binary directly with a relative path. Windows CANNOT: herdr
+# spawns the command with an extended-length (`\\?\C:\..`) working directory,
+# and Windows CreateProcessW cannot resolve a relative `./target/..` path
+# against a `\\?\` cwd (fails with "path not found" — verified on herdr 0.7.4,
+# for both panes and, depending on cwd, actions). The Windows variants below
+# therefore go through a small PowerShell launcher that builds an ABSOLUTE path
+# from HERDR_PLUGIN_ROOT (stripping the `\\?\` prefix) and runs the exe
+# directly. This is cwd-independent and works for both one-shot actions and
+# long-running panes.
 #
 # herdr 0.7.4 rejects duplicate pane/action ids even when the entries carry
 # disjoint `platforms` lists (verified via `herdr plugin link .`, error
@@ -56,7 +59,7 @@ platforms = ["linux"]
 id = "dashboard-win"
 title = "Space usage"
 placement = "overlay"
-command = ["cmd", "/c", "target\\release\\space-usage.exe --interval 2"]
+command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "$r=$env:HERDR_PLUGIN_ROOT; if($r.StartsWith('\\\\?\\')){$r=$r.Substring(4)}; & (Join-Path $r 'target\\release\\space-usage.exe') --interval 2"]
 platforms = ["windows"]
 
 # One-shot snapshot printed to stdout / plugin log.
@@ -71,7 +74,7 @@ platforms = ["linux"]
 id = "report-win"
 title = "Space usage report"
 contexts = ["workspace"]
-command = ["cmd", "/c", "target\\release\\space-usage.exe --once"]
+command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "$r=$env:HERDR_PLUGIN_ROOT; if($r.StartsWith('\\\\?\\')){$r=$r.Substring(4)}; & (Join-Path $r 'target\\release\\space-usage.exe') --once"]
 platforms = ["windows"]
 
 # Sidebar status updater: a background daemon that pushes each space's usage
@@ -87,7 +90,7 @@ platforms = ["linux"]
 [[actions]]
 id = "status-toggle-win"
 title = "Toggle sidebar usage status"
-command = ["cmd", "/c", "target\\release\\space-usage.exe --toggle"]
+command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "$r=$env:HERDR_PLUGIN_ROOT; if($r.StartsWith('\\\\?\\')){$r=$r.Substring(4)}; & (Join-Path $r 'target\\release\\space-usage.exe') --toggle"]
 platforms = ["windows"]
 
 [[actions]]
@@ -99,7 +102,7 @@ platforms = ["linux"]
 [[actions]]
 id = "status-enable-win"
 title = "Enable sidebar usage status"
-command = ["cmd", "/c", "target\\release\\space-usage.exe --enable"]
+command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "$r=$env:HERDR_PLUGIN_ROOT; if($r.StartsWith('\\\\?\\')){$r=$r.Substring(4)}; & (Join-Path $r 'target\\release\\space-usage.exe') --enable"]
 platforms = ["windows"]
 
 [[actions]]
@@ -111,5 +114,5 @@ platforms = ["linux"]
 [[actions]]
 id = "status-disable-win"
 title = "Disable sidebar usage status"
-command = ["cmd", "/c", "target\\release\\space-usage.exe --disable"]
+command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "$r=$env:HERDR_PLUGIN_ROOT; if($r.StartsWith('\\\\?\\')){$r=$r.Substring(4)}; & (Join-Path $r 'target\\release\\space-usage.exe') --disable"]
 platforms = ["windows"]

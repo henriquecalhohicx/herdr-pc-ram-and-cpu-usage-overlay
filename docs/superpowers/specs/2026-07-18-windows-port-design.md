@@ -201,16 +201,21 @@ testing and fixed:
    Windows transport must prepend `\\.\pipe\` (opening the bare path lands on the
    placeholder file → `ERROR_SHARING_VIOLATION`). The transport mechanism itself
    (named pipe, `CreateFileW`) was correct — only the name derivation was wrong.
-2. **Command spawn.** herdr cannot launch a `./`-relative executable on Windows:
-   `CreateProcess` resolves a relative application path against the caller's
-   (herdr's) cwd, not the child's working directory, so
-   `./target/release/space-usage.exe` fails with "path not found". The Windows
-   manifest entries go through `cmd /c "target\release\space-usage.exe <flag>"`,
-   which inherits the plugin-root cwd herdr sets and resolves the path itself.
+2. **Command spawn.** herdr spawns plugin commands with an extended-length
+   (`\\?\C:\..`) working directory. Windows `CreateProcessW` cannot resolve a
+   relative `./target/..` application path against a `\\?\` cwd (fails with
+   "path not found" — reproduced for panes, and for actions when the cwd is the
+   `\\?\` form). The Windows manifest entries therefore go through a small
+   PowerShell launcher that builds an ABSOLUTE path from `HERDR_PLUGIN_ROOT`
+   (stripping the `\\?\` prefix) and runs the exe directly:
+   `powershell -NoProfile -ExecutionPolicy Bypass -Command "$r=$env:HERDR_PLUGIN_ROOT; if($r.StartsWith('\\?\')){$r=$r.Substring(4)}; & (Join-Path $r 'target\release\space-usage.exe') <flag>"`.
+   This is cwd-independent and works for both one-shot actions and long-running
+   panes (a `cmd /c` launcher works for actions but dies for panes, which get
+   the `\\?\` cwd cmd cannot use).
 
 Both are covered by a full live E2E: report action prints per-space CPU/RAM over
-the pipe; daemon enable/disable/toggle spawns detached and stops via the named
-stop-event.
+the pipe; the dashboard pane renders and refreshes; daemon enable/disable/toggle
+spawns detached and stops via the named stop-event.
 
 ## Risks / open items
 
