@@ -7,14 +7,14 @@
 //! statuses self-clear via their TTL if the daemon dies. `enable`/`disable`/
 //! `toggle` spawn or signal that daemon and sweep leftover statuses.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[cfg(unix)]
 use signal_hook::consts::{SIGINT, SIGTERM};
@@ -26,6 +26,7 @@ use crate::config::{self, Config, Labels, Mode};
 use crate::herdr::{self, Herdr};
 use crate::model::Space;
 use crate::proc;
+use crate::timer;
 
 /// Panes we have pushed status onto this run, so shutdown can clear them.
 #[derive(Debug, Default)]
@@ -36,6 +37,8 @@ pub struct Tracked {
     pub metadata: HashSet<String>,
     /// Workspaces carrying our TTL'd `usage` spaces-card token.
     pub workspaces: HashSet<String>,
+    /// Claude panes carrying our TTL'd `cache` countdown token.
+    pub cache: HashSet<String>,
 }
 
 /// PID of a live updater daemon, or `None` (missing pid file / dead process).
@@ -167,6 +170,8 @@ pub fn run_daemon() -> crate::Result<()> {
         });
     }
 
+    let mut timers: HashMap<String, timer::TimerState> = HashMap::new();
+
     let daemon_interval_ms = config.interval_seconds * 1000;
     let mut window_ms: u64 = 500; // quick first sample so the sidebar updates immediately
     let mut failures: u32 = 0;
@@ -191,6 +196,8 @@ pub fn run_daemon() -> crate::Result<()> {
                         config.interval_seconds * 1000 * 3,
                         &mut guard,
                     );
+                    // Per-agent cache countdown on each claude pane.
+                    push_cache_tokens(&mut client, &spaces, &config, &mut timers, &mut guard);
                 }
                 if config.window_title_totals {
                     set_title_totals(&mut client, &spaces, &labels);
@@ -280,6 +287,9 @@ pub fn disable_updater() -> crate::Result<()> {
                 sweep.pseudo.extend(sp.pseudo_panes.iter().cloned());
                 sweep.metadata.extend(sp.agent_panes.iter().cloned());
                 sweep.metadata.extend(sp.spare_panes.iter().cloned());
+                sweep
+                    .cache
+                    .extend(sp.claude_panes.iter().map(|c| c.pane_id.clone()));
             }
             clear_all(&mut client, &sweep);
         }
@@ -384,6 +394,9 @@ pub fn clear_all(client: &mut Herdr, tracked: &Tracked) {
     for workspace_id in &tracked.workspaces {
         let _ = client.clear_workspace_token(workspace_id, &source, "usage");
     }
+    for pane_id in &tracked.cache {
+        let _ = client.clear_pane_token(pane_id, &source, "cache");
+    }
 }
 
 /// Write the all-space CPU/RAM totals to the client window title.
@@ -425,6 +438,55 @@ pub fn push_space_tokens(
             tracked.workspaces.insert(sp.id.clone());
         }
     }
+}
+
+/// Push each `claude` agent pane's cache-countdown as a TTL'd `$cache` pane
+/// metadata token. Keeps a per-pane [`timer::TimerState`] across loop iterations
+/// in `timers`: while the agent works the token is suppressed and the window is
+/// pinned full; while stopped it ticks down to `⚠ 0m`. Prunes timer state for
+/// panes that no longer exist. Best-effort per pane; the TTL self-clears if the
+/// daemon dies. Renders wherever the user adds a `$cache` row to
+/// `[ui.sidebar.agents]`; herdr elides the segment for a suppressed/absent token.
+pub fn push_cache_tokens(
+    client: &mut Herdr,
+    spaces: &[Space],
+    config: &Config,
+    timers: &mut HashMap<String, timer::TimerState>,
+    tracked: &mut Tracked,
+) {
+    let source = config::plugin_id();
+    let ttl_ms = config.interval_seconds * 1000 * 3;
+    let now = Instant::now();
+
+    let mut present: HashSet<String> = HashSet::new();
+    for sp in spaces {
+        for cp in &sp.claude_panes {
+            present.insert(cp.pane_id.clone());
+            let working = timer::is_working(cp.status.as_deref());
+            let state = timers
+                .entry(cp.pane_id.clone())
+                .or_insert_with(|| timer::TimerState { reset_at: now });
+            timer::on_sample(state, working, now);
+
+            match timer::cache_token(working, state.reset_at, now, config.cache_minutes) {
+                Some(text) => {
+                    if client
+                        .pane_report_tokens(&cp.pane_id, &source, &[("cache", &text)], ttl_ms)
+                        .is_ok()
+                    {
+                        tracked.cache.insert(cp.pane_id.clone());
+                    }
+                }
+                None => {
+                    // Working — suppress so herdr elides the segment.
+                    let _ = client.clear_pane_token(&cp.pane_id, &source, "cache");
+                    tracked.cache.remove(&cp.pane_id);
+                }
+            }
+        }
+    }
+    // Drop state for panes that closed since the last sample.
+    timers.retain(|pane_id, _| present.contains(pane_id));
 }
 
 // ---- helpers ----------------------------------------------------------------

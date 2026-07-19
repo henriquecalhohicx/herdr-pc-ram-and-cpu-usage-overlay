@@ -50,9 +50,6 @@ pub struct Space {
 /// A `claude` agent pane plus its herdr `agent_status`, used by the per-agent
 /// cache countdown timer. Collected in `collect_spaces` and folded upward in
 /// `aggregate_families` so worktree-child agents keep their timer.
-// Consumed by the timer wiring in a later task; until then these fields are
-// only written, not read, outside tests.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct ClaudePane {
     pub pane_id: String,

@@ -3,9 +3,6 @@
 //! No herdr or platform types — unit-tested in isolation. The daemon owns the
 //! per-pane `TimerState` map and calls these on each sample.
 
-// Wired into the daemon in a later task; until then the pub items are unused.
-#![allow(dead_code)]
-
 use std::time::Instant;
 
 /// Default cache/attention window in minutes.
