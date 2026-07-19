@@ -26,6 +26,9 @@ pub struct Config {
     pub interval_seconds: u64,
     pub window_title_totals: bool,
     pub cache_minutes: u64,
+    pub cache_warn_minutes: u64,
+    pub cache_alert_minutes: u64,
+    pub cache_alert_sound: String,
 }
 
 impl Default for Config {
@@ -35,6 +38,9 @@ impl Default for Config {
             interval_seconds: 5,
             window_title_totals: true,
             cache_minutes: crate::timer::DEFAULT_CACHE_MINUTES,
+            cache_warn_minutes: 30,
+            cache_alert_minutes: 10,
+            cache_alert_sound: String::new(),
         }
     }
 }
@@ -166,10 +172,31 @@ fn parse_config(text: &str) -> Config {
                     }
                 }
             }
+            "cache_warn_minutes" => {
+                if let Ok(n) = value.parse::<f64>() {
+                    if n >= 1.0 {
+                        cfg.cache_warn_minutes = n as u64;
+                    }
+                }
+            }
+            "cache_alert_minutes" => {
+                if let Ok(n) = value.parse::<f64>() {
+                    if n >= 1.0 {
+                        cfg.cache_alert_minutes = n as u64;
+                    }
+                }
+            }
+            "cache_alert_sound" => cfg.cache_alert_sound = value.to_string(),
             "window_title_totals" => cfg.window_title_totals = value != "false",
             _ => {}
         }
     }
+    // Keep 1 <= alert <= warn <= cache_minutes so the tiers are well-ordered even
+    // if the user misconfigures them.
+    cfg.cache_alert_minutes = cfg.cache_alert_minutes.clamp(1, cfg.cache_minutes);
+    cfg.cache_warn_minutes = cfg
+        .cache_warn_minutes
+        .clamp(cfg.cache_alert_minutes, cfg.cache_minutes);
     cfg
 }
 
@@ -300,6 +327,36 @@ mod tests {
         // Anything other than the literal `false` is truthy.
         assert!(parse_config("window_title_totals = true").window_title_totals);
         assert!(parse_config("window_title_totals = 0").window_title_totals);
+    }
+
+    #[test]
+    fn config_cache_tiers_and_sound_defaults() {
+        let cfg = parse_config("");
+        assert_eq!(cfg.cache_warn_minutes, 30);
+        assert_eq!(cfg.cache_alert_minutes, 10);
+        assert_eq!(cfg.cache_alert_sound, "");
+    }
+
+    #[test]
+    fn config_cache_sound_path_is_read_verbatim() {
+        let cfg = parse_config("cache_alert_sound = \"C:\\\\stuff\\\\sounds\\\\wav\\\\droid.wav\"");
+        assert_eq!(
+            cfg.cache_alert_sound,
+            "C:\\\\stuff\\\\sounds\\\\wav\\\\droid.wav"
+        );
+    }
+
+    #[test]
+    fn config_cache_tiers_clamp_to_valid_ordering() {
+        // alert above the window clamps down to cache_minutes; warn follows.
+        let cfg =
+            parse_config("cache_minutes = 60\ncache_alert_minutes = 100\ncache_warn_minutes = 5");
+        assert_eq!(cfg.cache_alert_minutes, 60);
+        assert_eq!(cfg.cache_warn_minutes, 60); // warn never below alert
+                                                // warn below alert is bumped up to alert.
+        let cfg = parse_config("cache_alert_minutes = 20\ncache_warn_minutes = 5");
+        assert_eq!(cfg.cache_alert_minutes, 20);
+        assert_eq!(cfg.cache_warn_minutes, 20);
     }
 
     #[test]
