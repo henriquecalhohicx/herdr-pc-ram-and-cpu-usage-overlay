@@ -23,6 +23,7 @@ mod herdr;
 mod model;
 mod proc;
 mod render;
+mod sound;
 mod timer;
 
 use std::process;
