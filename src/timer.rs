@@ -3,6 +3,9 @@
 //! No herdr or platform types — unit-tested in isolation. The daemon owns the
 //! per-pane `TimerState` map and calls these on each sample.
 
+// Wired into the daemon in a later task; until then the pub items are unused.
+#![allow(dead_code)]
+
 use std::time::Instant;
 
 /// Default cache/attention window in minutes.
@@ -46,7 +49,7 @@ pub fn remaining_minutes(reset_at: Instant, now: Instant, total_minutes: u64) ->
     let total_secs = total_minutes.saturating_mul(60);
     let remaining = total_secs.saturating_sub(elapsed);
     // Ceil to whole minutes: (remaining + 59) / 60.
-    ((remaining + 59) / 60).min(total_minutes)
+    remaining.div_ceil(60).min(total_minutes)
 }
 
 /// The `$cache` token text for a `claude` pane, or `None` to suppress it (the
@@ -89,29 +92,46 @@ mod tests {
         let now = Instant::now();
         assert_eq!(remaining_minutes(now, now, 60), 60);
         // 30s in still reads a full 60 (ceil to whole minutes).
-        assert_eq!(remaining_minutes(now - Duration::from_secs(30), now, 60), 60);
+        assert_eq!(
+            remaining_minutes(now - Duration::from_secs(30), now, 60),
+            60
+        );
     }
 
     #[test]
     fn remaining_ceils_to_whole_minutes() {
         let now = Instant::now();
         // 60s elapsed -> 3540s left -> 59m.
-        assert_eq!(remaining_minutes(now - Duration::from_secs(60), now, 60), 59);
+        assert_eq!(
+            remaining_minutes(now - Duration::from_secs(60), now, 60),
+            59
+        );
         // 59m elapsed -> 60s left -> 1m.
-        assert_eq!(remaining_minutes(now - Duration::from_secs(3540), now, 60), 1);
+        assert_eq!(
+            remaining_minutes(now - Duration::from_secs(3540), now, 60),
+            1
+        );
     }
 
     #[test]
     fn remaining_clamps_to_zero_past_expiry() {
         let now = Instant::now();
-        assert_eq!(remaining_minutes(now - Duration::from_secs(3600), now, 60), 0);
-        assert_eq!(remaining_minutes(now - Duration::from_secs(9999), now, 60), 0);
+        assert_eq!(
+            remaining_minutes(now - Duration::from_secs(3600), now, 60),
+            0
+        );
+        assert_eq!(
+            remaining_minutes(now - Duration::from_secs(9999), now, 60),
+            0
+        );
     }
 
     #[test]
     fn on_sample_pins_reset_while_working_and_holds_while_stopped() {
         let now = Instant::now();
-        let mut state = TimerState { reset_at: now - Duration::from_secs(100) };
+        let mut state = TimerState {
+            reset_at: now - Duration::from_secs(100),
+        };
         // Working: reset_at snaps forward to now.
         on_sample(&mut state, true, now);
         assert_eq!(state.reset_at, now);
