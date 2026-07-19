@@ -76,12 +76,33 @@ window_title_totals = true
 - **agents-panel** (default): each space gets its own two-row entry in the
   sidebar agents panel via a `usage` pseudo-agent on a spare shell pane.
 - **sidebar**: renders usage as a third line inside each spaces card, under the
-  branch name. Requires a herdr build patched to add a spaces-card status row —
-  a native plugin sidebar surface is an open upstream request (discussion #713).
-  That patch modifies herdr itself (AGPL-3.0), so it is **not** distributed with
-  this MIT plugin; agents-panel mode (above) works on stock herdr with no patch.
+  branch name.
 
 Switching modes cleans up after the other mode automatically.
+
+### Spaces card (native, no patch — herdr with metadata tokens)
+
+Recent herdr (the metadata-token feature, ex-discussion #713) can render the
+usage line **in the spaces card on a stock build** — no patch. The daemon
+pushes each space's usage as a TTL'd `usage` workspace metadata token via
+`workspace.report_metadata`; you surface it by adding a `$usage` token row to
+your herdr `config.toml`:
+
+```toml
+[ui.sidebar.spaces]
+rows = [
+    ["state_icon", "workspace"],   # herdr defaults
+    ["branch", "git_status"],      #
+    ["$usage"],                    # ← this plugin's per-space cpu/ram
+]
+```
+
+Enable the updater (`status-toggle` / `status-toggle-win` on Windows) and
+`herdr config` reload. The token self-clears (TTL) if the daemon stops.
+
+> The older note here said the spaces card "requires a patched herdr". That
+> predates herdr's native metadata-token surface; on builds that have it, the
+> config above is all you need. The AGPL patch is no longer necessary.
 
 ## Labels
 

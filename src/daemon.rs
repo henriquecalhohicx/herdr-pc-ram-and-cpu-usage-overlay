@@ -169,6 +169,17 @@ pub fn run_daemon() -> crate::Result<()> {
                     let mut guard = tracked.lock().expect("tracked mutex poisoned");
                     push_statuses(&mut client, &spaces, &config, &labels, &mut guard);
                 }
+                // Native spaces-card surface: push each space's usage as a TTL'd
+                // `usage` workspace token. Renders in the sidebar spaces card when
+                // the user adds a `$usage` token row to their herdr sidebar config
+                // (no herdr patch needed on builds with metadata tokens). Additive
+                // and independent of the agents-panel mode above.
+                push_space_tokens(
+                    &mut client,
+                    &spaces,
+                    &labels,
+                    config.interval_seconds * 1000 * 3,
+                );
                 if config.window_title_totals {
                     set_title_totals(&mut client, &spaces, &labels);
                 }
@@ -364,6 +375,18 @@ pub fn set_title_totals(client: &mut Herdr, spaces: &[Space], labels: &Labels) {
         ram_display(ram_mb),
     );
     let _ = client.window_title_set(&title);
+}
+
+/// Push each space's usage as a TTL'd `usage` workspace metadata token, which
+/// herdr renders in the spaces card wherever the user's sidebar config places a
+/// `$usage` token. Best-effort per space; a failure on one space is ignored so
+/// the others still update. The TTL self-clears the token if the daemon dies.
+pub fn push_space_tokens(client: &mut Herdr, spaces: &[Space], labels: &Labels, ttl_ms: u64) {
+    let source = config::plugin_id();
+    for sp in spaces {
+        let status = status_line(sp, labels);
+        let _ = client.workspace_report_metadata(&sp.id, &source, &[("usage", &status)], ttl_ms);
+    }
 }
 
 // ---- helpers ----------------------------------------------------------------

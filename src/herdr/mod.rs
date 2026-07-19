@@ -224,6 +224,36 @@ impl Herdr {
         Ok(())
     }
 
+    /// `workspace.report_metadata` — set TTL'd custom sidebar tokens on a space.
+    ///
+    /// herdr renders these as `SpaceSidebarToken::Custom` entries in the spaces
+    /// card: a config row token `$<key>` displays the value pushed here. `tokens`
+    /// are `(key, value)` pairs; each is a `Some(value)` set (herdr's schema is
+    /// `HashMap<String, Option<String>>`, `null` = clear). This is the native,
+    /// no-patch spaces-card surface (herdr >= the metadata-token release).
+    pub fn workspace_report_metadata(
+        &mut self,
+        workspace_id: &str,
+        source: &str,
+        tokens: &[(&str, &str)],
+        ttl_ms: u64,
+    ) -> crate::Result<()> {
+        let token_map: serde_json::Map<String, Value> = tokens
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), Value::String((*v).to_string())))
+            .collect();
+        self.call(
+            "workspace.report_metadata",
+            &json!({
+                "workspace_id": workspace_id,
+                "source": source,
+                "tokens": token_map,
+                "ttl_ms": ttl_ms,
+            }),
+        )?;
+        Ok(())
+    }
+
     /// `client.window_title.set`.
     pub fn window_title_set(&mut self, title: &str) -> crate::Result<()> {
         self.call("client.window_title.set", &json!({ "title": title }))?;
