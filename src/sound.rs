@@ -5,11 +5,6 @@ use std::path::Path;
 
 /// Play a `.wav` asynchronously, best-effort. Empty path or a missing file is a
 /// no-op; a playback failure is ignored. On non-Windows this does nothing.
-///
-/// Deliberately retained but not yet wired: no caller invokes this yet (a later
-/// task hooks it up to the cache-alert threshold). Kept `#[allow(dead_code)]`
-/// until that wiring lands, per the fallback-path convention in `herdr::bin_path`.
-#[allow(dead_code)]
 pub fn play_wav(path: &str) {
     if path.is_empty() || !Path::new(path).exists() {
         return;

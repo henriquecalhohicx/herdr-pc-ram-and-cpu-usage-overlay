@@ -16,10 +16,12 @@ pub const DEFAULT_CACHE_MINUTES: u64 = 60;
 /// count down.
 pub const WORKING_STATES: &[&str] = &["working"];
 
-/// Per-pane countdown state. `reset_at` is the instant the current 60m window
-/// began (refreshed to "now" every sample the agent is working).
+/// Per-pane countdown state. `reset_at` is the instant the current window began
+/// (refreshed every sample the agent is working). `alerted` debounces the alert
+/// sound: set when it fires, cleared whenever the tier leaves Alert.
 pub struct TimerState {
     pub reset_at: Instant,
+    pub alerted: bool,
 }
 
 /// Whether `status` means the agent is actively working (countdown suppressed).
@@ -50,24 +52,60 @@ pub fn remaining_minutes(reset_at: Instant, now: Instant, total_minutes: u64) ->
     remaining.div_ceil(60).min(total_minutes)
 }
 
-/// The `$cache` token text for a `claude` pane, or `None` to suppress it (the
-/// agent is working). `"42m"` while counting down; `"⚠ 0m"` at expiry — the
-/// icon carries the alert since herdr token colour is static per config.
-pub fn cache_token(
-    working: bool,
-    reset_at: Instant,
-    now: Instant,
-    total_minutes: u64,
-) -> Option<String> {
-    if working {
-        return None;
-    }
-    let m = remaining_minutes(reset_at, now, total_minutes);
-    Some(if m == 0 {
-        "⚠ 0m".to_string()
+/// Color/urgency tier of a countdown, driving which token name carries the value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tier {
+    Normal,
+    Warn,
+    Alert,
+}
+
+/// The herdr token keys the cache value can be published under, one per tier —
+/// used to clear the inactive tiers and to sweep every key on cleanup.
+pub const CACHE_TOKEN_KEYS: &[&str] = &["cache", "cache_warn", "cache_alert"];
+
+/// Tier from whole minutes remaining and the (already-clamped, warn >= alert)
+/// thresholds: `<= alert_minutes` → Alert, else `<= warn_minutes` → Warn, else
+/// Normal.
+pub fn tier(remaining_minutes: u64, warn_minutes: u64, alert_minutes: u64) -> Tier {
+    if remaining_minutes <= alert_minutes {
+        Tier::Alert
+    } else if remaining_minutes <= warn_minutes {
+        Tier::Warn
     } else {
-        format!("{m}m")
-    })
+        Tier::Normal
+    }
+}
+
+/// herdr token key for a tier. The user styles each key's colour in herdr config.
+pub fn tier_token_key(t: Tier) -> &'static str {
+    match t {
+        Tier::Normal => "cache",
+        Tier::Warn => "cache_warn",
+        Tier::Alert => "cache_alert",
+    }
+}
+
+/// The displayed token value, e.g. `"cache 42m"` … `"cache 0m"`. Colour (not an
+/// icon) carries the alert, so there is no `⚠`.
+pub fn cache_label(remaining_minutes: u64) -> String {
+    format!("cache {remaining_minutes}m")
+}
+
+/// Whether to play the alert sound on this sample, updating the debounce flag.
+/// True exactly on the transition into Alert; any non-Alert tier re-arms.
+pub fn should_alert(t: Tier, alerted: &mut bool) -> bool {
+    match t {
+        Tier::Alert if !*alerted => {
+            *alerted = true;
+            true
+        }
+        Tier::Alert => false,
+        _ => {
+            *alerted = false;
+            false
+        }
+    }
 }
 
 #[cfg(test)]
@@ -132,6 +170,7 @@ mod tests {
         let now = Instant::now();
         let mut state = TimerState {
             reset_at: now - Duration::from_secs(100),
+            alerted: false,
         };
         // Working: reset_at snaps forward to now.
         on_sample(&mut state, true, now);
@@ -143,24 +182,44 @@ mod tests {
     }
 
     #[test]
-    fn cache_token_suppresses_while_working() {
-        let now = Instant::now();
-        assert_eq!(cache_token(true, now, now, 60), None);
+    fn tier_thresholds_are_inclusive_lower_bounds() {
+        assert_eq!(tier(31, 30, 10), Tier::Normal);
+        assert_eq!(tier(30, 30, 10), Tier::Warn);
+        assert_eq!(tier(11, 30, 10), Tier::Warn);
+        assert_eq!(tier(10, 30, 10), Tier::Alert);
+        assert_eq!(tier(0, 30, 10), Tier::Alert);
     }
 
     #[test]
-    fn cache_token_shows_minutes_then_alert_at_zero() {
-        let now = Instant::now();
-        assert_eq!(cache_token(false, now, now, 60), Some("60m".to_string()));
-        assert_eq!(
-            cache_token(false, now - Duration::from_secs(3600), now, 60),
-            Some("⚠ 0m".to_string())
-        );
+    fn tier_handles_warn_equal_alert() {
+        assert_eq!(tier(11, 10, 10), Tier::Normal);
+        assert_eq!(tier(10, 10, 10), Tier::Alert);
     }
 
     #[test]
-    fn cache_token_honours_a_custom_total() {
-        let now = Instant::now();
-        assert_eq!(cache_token(false, now, now, 30), Some("30m".to_string()));
+    fn tier_token_key_maps_each_tier() {
+        assert_eq!(tier_token_key(Tier::Normal), "cache");
+        assert_eq!(tier_token_key(Tier::Warn), "cache_warn");
+        assert_eq!(tier_token_key(Tier::Alert), "cache_alert");
+        for t in [Tier::Normal, Tier::Warn, Tier::Alert] {
+            assert!(CACHE_TOKEN_KEYS.contains(&tier_token_key(t)));
+        }
+    }
+
+    #[test]
+    fn cache_label_is_prefixed_and_covers_zero() {
+        assert_eq!(cache_label(42), "cache 42m");
+        assert_eq!(cache_label(1), "cache 1m");
+        assert_eq!(cache_label(0), "cache 0m");
+    }
+
+    #[test]
+    fn should_alert_fires_once_per_episode_and_rearms() {
+        let mut alerted = false;
+        assert!(should_alert(Tier::Alert, &mut alerted));
+        assert!(!should_alert(Tier::Alert, &mut alerted));
+        assert!(!should_alert(Tier::Warn, &mut alerted));
+        assert!(!should_alert(Tier::Normal, &mut alerted));
+        assert!(should_alert(Tier::Alert, &mut alerted));
     }
 }

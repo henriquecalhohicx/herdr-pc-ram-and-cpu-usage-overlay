@@ -26,6 +26,7 @@ use crate::config::{self, Config, Labels, Mode};
 use crate::herdr::{self, Herdr};
 use crate::model::Space;
 use crate::proc;
+use crate::sound;
 use crate::timer;
 
 /// Panes we have pushed status onto this run, so shutdown can clear them.
@@ -197,7 +198,14 @@ pub fn run_daemon() -> crate::Result<()> {
                         &mut guard,
                     );
                     // Per-agent cache countdown on each claude pane.
-                    push_cache_tokens(&mut client, &spaces, &config, &mut timers, &mut guard);
+                    push_cache_tokens(
+                        &mut client,
+                        &spaces,
+                        &config,
+                        &labels,
+                        &mut timers,
+                        &mut guard,
+                    );
                 }
                 if config.window_title_totals {
                     set_title_totals(&mut client, &spaces, &labels);
@@ -339,6 +347,17 @@ pub fn push_statuses(
             let _ = client.clear_pane_token(pane_id, &source, "usage");
         }
 
+        // A space with a claude agent shows cpu/ram on the claude line (see
+        // push_cache_tokens), so it needs no separate `usage` pseudo-agent entry.
+        // Release any pseudo-agent we still hold there and skip the usage push.
+        if !sp.claude_panes.is_empty() {
+            for pane_id in &sp.pseudo_panes {
+                release_pseudo(client, pane_id, &source);
+                let _ = client.clear_pane_token(pane_id, &source, "usage");
+            }
+            continue;
+        }
+
         if config.mode == Mode::AgentsPanel {
             // Drop stale claims from earlier runs so a space keeps one entry.
             for extra in sp.pseudo_panes.iter().skip(1) {
@@ -404,7 +423,10 @@ pub fn clear_all(client: &mut Herdr, tracked: &Tracked) {
         let _ = client.clear_workspace_token(workspace_id, &source, "usage");
     }
     for pane_id in &tracked.cache {
-        let _ = client.clear_pane_token(pane_id, &source, "cache");
+        for key in timer::CACHE_TOKEN_KEYS {
+            let _ = client.clear_pane_token(pane_id, &source, key);
+        }
+        let _ = client.clear_pane_token(pane_id, &source, "usage");
     }
 }
 
@@ -449,17 +471,18 @@ pub fn push_space_tokens(
     }
 }
 
-/// Push each `claude` agent pane's cache-countdown as a TTL'd `$cache` pane
-/// metadata token. Keeps a per-pane [`timer::TimerState`] across loop iterations
-/// in `timers`: while the agent works the token is suppressed and the window is
-/// pinned full; while stopped it ticks down to `⚠ 0m`. Prunes timer state for
-/// panes that no longer exist. Best-effort per pane; the TTL self-clears if the
-/// daemon dies. Renders wherever the user adds a `$cache` row to
-/// `[ui.sidebar.agents]`; herdr elides the segment for a suppressed/absent token.
+/// Push per-claude-agent tokens: the space's cpu/ram as `$usage` on the claude
+/// pane (so its entry reads `claude · cpu · ram · cache`), plus a tiered `$cache*`
+/// countdown token. Keeps in-memory `timer::TimerState` per pane across loops.
+/// While the agent works the cache tokens are suppressed and the sound re-arms;
+/// on the transition into the alert tier the configured `.wav` plays once.
+/// Best-effort per pane; the TTL self-clears if the daemon dies. Prunes state
+/// for panes that closed.
 pub fn push_cache_tokens(
     client: &mut Herdr,
     spaces: &[Space],
     config: &Config,
+    labels: &Labels,
     timers: &mut HashMap<String, timer::TimerState>,
     tracked: &mut Tracked,
 ) {
@@ -469,32 +492,52 @@ pub fn push_cache_tokens(
 
     let mut present: HashSet<String> = HashSet::new();
     for sp in spaces {
+        if sp.claude_panes.is_empty() {
+            continue;
+        }
+        let usage = status_line(sp, labels);
         for cp in &sp.claude_panes {
             present.insert(cp.pane_id.clone());
             let working = timer::is_working(cp.status.as_deref());
             let state = timers
                 .entry(cp.pane_id.clone())
-                .or_insert_with(|| timer::TimerState { reset_at: now });
+                .or_insert_with(|| timer::TimerState {
+                    reset_at: now,
+                    alerted: false,
+                });
             timer::on_sample(state, working, now);
 
-            match timer::cache_token(working, state.reset_at, now, config.cache_minutes) {
-                Some(text) => {
-                    if client
-                        .pane_report_tokens(&cp.pane_id, &source, &[("cache", &text)], ttl_ms)
-                        .is_ok()
-                    {
-                        tracked.cache.insert(cp.pane_id.clone());
-                    }
+            // cpu/ram always rides the claude line.
+            let _ = client.pane_report_tokens(&cp.pane_id, &source, &[("usage", &usage)], ttl_ms);
+            tracked.cache.insert(cp.pane_id.clone());
+
+            if working {
+                // Suppress the countdown and re-arm the alert sound.
+                for key in timer::CACHE_TOKEN_KEYS {
+                    let _ = client.clear_pane_token(&cp.pane_id, &source, key);
                 }
-                None => {
-                    // Working — suppress so herdr elides the segment.
-                    let _ = client.clear_pane_token(&cp.pane_id, &source, "cache");
-                    tracked.cache.remove(&cp.pane_id);
-                }
+                state.alerted = false;
+                continue;
+            }
+
+            let remaining = timer::remaining_minutes(state.reset_at, now, config.cache_minutes);
+            let t = timer::tier(
+                remaining,
+                config.cache_warn_minutes,
+                config.cache_alert_minutes,
+            );
+            let active = timer::tier_token_key(t);
+            let label = timer::cache_label(remaining);
+            let _ = client.pane_report_tokens(&cp.pane_id, &source, &[(active, &label)], ttl_ms);
+            for key in timer::CACHE_TOKEN_KEYS.iter().filter(|k| **k != active) {
+                let _ = client.clear_pane_token(&cp.pane_id, &source, key);
+            }
+
+            if timer::should_alert(t, &mut state.alerted) && !config.cache_alert_sound.is_empty() {
+                sound::play_wav(&config.cache_alert_sound);
             }
         }
     }
-    // Drop state for panes that closed since the last sample.
     timers.retain(|pane_id, _| present.contains(pane_id));
 }
 
