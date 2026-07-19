@@ -33,6 +33,9 @@ pub struct Space {
     pub spare_panes: Vec<String>,
     /// panes carrying our "usage" pseudo-agent.
     pub pseudo_panes: Vec<String>,
+    /// panes we hold a "usage" claim on that actually run a real agent (herdr
+    /// glyph present) — our claim is masking it, so release rather than reuse.
+    pub masked_pseudo_panes: Vec<String>,
     /// `claude` agent panes and their herdr agent_status (for the cache timer).
     pub claude_panes: Vec<ClaudePane>,
     /// CPU % of the whole machine (all cores), filled by measure.
@@ -99,6 +102,14 @@ pub struct PaneInfo {
     pub agent: Option<String>,
     #[serde(default)]
     pub agent_status: Option<String>,
+    /// Raw terminal title (herdr prefixes a glyph for a detected agent).
+    #[serde(default)]
+    pub terminal_title: Option<String>,
+    /// De-glyphed terminal title. A raw title that differs from this means herdr
+    /// detects a real agent in the pane — even when our own `usage` pseudo-agent
+    /// claim is masking the `agent` field.
+    #[serde(default)]
+    pub terminal_title_stripped: Option<String>,
 }
 
 // ---- pane.process_info ------------------------------------------------------

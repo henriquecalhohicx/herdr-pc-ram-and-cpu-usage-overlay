@@ -330,6 +330,15 @@ pub fn push_statuses(
     for sp in spaces {
         let status = status_line(sp, labels);
 
+        // Guard: release any "usage" claim of ours that is masking a real agent
+        // pane, so herdr can surface that agent (and the cache timer can attach).
+        // Runs in both modes; a released pane re-appears as its real agent next
+        // loop. Clears the leftover `$usage` token too.
+        for pane_id in &sp.masked_pseudo_panes {
+            release_pseudo(client, pane_id, &source);
+            let _ = client.clear_pane_token(pane_id, &source, "usage");
+        }
+
         if config.mode == Mode::AgentsPanel {
             // Drop stale claims from earlier runs so a space keeps one entry.
             for extra in sp.pseudo_panes.iter().skip(1) {

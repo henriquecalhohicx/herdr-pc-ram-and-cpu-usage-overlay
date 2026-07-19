@@ -39,6 +39,7 @@ pub fn collect_spaces(client: &mut Herdr) -> crate::Result<Vec<Space>> {
         let mut agent_panes = Vec::new(); // panes with a real agent — sidebar rows
         let mut spare_panes = Vec::new(); // plain shell panes — pseudo-agent hosts
         let mut pseudo_panes = Vec::new(); // panes already carrying our "usage" agent
+        let mut masked_pseudo_panes = Vec::new(); // our "usage" claim over a real agent
         let mut claude_panes = Vec::new(); // claude agent panes + status (cache timer)
         let mut cwd: Option<&str> = None;
 
@@ -49,11 +50,25 @@ pub fn collect_spaces(client: &mut Herdr) -> crate::Result<Vec<Space>> {
                     cwd = Some(c);
                 }
             }
+            // A herdr agent glyph in the title means a real agent runs here even
+            // when our own "usage" claim (or detection lag) hides the `agent`.
+            let real_agent_glyph = pane_has_agent_glyph(
+                pane.terminal_title.as_deref(),
+                pane.terminal_title_stripped.as_deref(),
+            );
             // Classify: our pseudo-agent, then any real (non-empty) agent, else a
             // plain shell pane. An empty-string agent is falsy in JS → spare.
             match pane.agent.as_deref() {
+                // Our "usage" claim, but a real agent is under it → release it and
+                // never reuse it as a host (would keep masking the agent).
+                Some(PSEUDO_AGENT) if real_agent_glyph => {
+                    masked_pseudo_panes.push(pane.pane_id.clone())
+                }
                 Some(PSEUDO_AGENT) => pseudo_panes.push(pane.pane_id.clone()),
                 Some(agent) if !agent.is_empty() => agent_panes.push(pane.pane_id.clone()),
+                // No reported agent, but a glyph says one is there (detection lag):
+                // treat as an agent pane so we never claim it as a usage host.
+                _ if real_agent_glyph => agent_panes.push(pane.pane_id.clone()),
                 _ => spare_panes.push(pane.pane_id.clone()),
             }
             // Track claude agents for the per-agent cache countdown timer.
@@ -88,11 +103,25 @@ pub fn collect_spaces(client: &mut Herdr) -> crate::Result<Vec<Space>> {
             agent_panes,
             spare_panes,
             pseudo_panes,
+            masked_pseudo_panes,
             claude_panes,
             ..Default::default()
         });
     }
     Ok(spaces)
+}
+
+/// Whether a pane carries a herdr agent-title glyph — i.e. herdr detects a real
+/// agent in it. herdr prefixes a detected agent's title with a marker glyph and
+/// exposes the de-glyphed form as `terminal_title_stripped`, so a raw title that
+/// differs from its stripped form means an agent is present — even when our own
+/// `usage` pseudo-agent claim is masking the pane's `agent` field. Agent-agnostic
+/// (works for claude, codex, …); both titles absent/equal ⇒ no agent.
+pub fn pane_has_agent_glyph(raw: Option<&str>, stripped: Option<&str>) -> bool {
+    match (raw, stripped) {
+        (Some(r), Some(s)) => !r.is_empty() && !s.is_empty() && r != s,
+        _ => false,
+    }
 }
 
 /// git branch of `cwd` via `git -C <cwd> rev-parse --abbrev-ref HEAD`
@@ -361,6 +390,24 @@ mod tests {
     fn git_branch_empty_for_none_or_blank_cwd() {
         assert_eq!(git_branch(None), "");
         assert_eq!(git_branch(Some("")), "");
+    }
+
+    #[test]
+    fn agent_glyph_detected_only_when_raw_differs_from_stripped() {
+        // Real agent: herdr prefixes a glyph, stripped removes it.
+        assert!(pane_has_agent_glyph(
+            Some("✳ General conversation and check-in"),
+            Some("General conversation and check-in"),
+        ));
+        // Plain shell: raw == stripped.
+        let sh = "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+        assert!(!pane_has_agent_glyph(Some(sh), Some(sh)));
+        // Missing either title ⇒ no agent claimed.
+        assert!(!pane_has_agent_glyph(Some("✳ X"), None));
+        assert!(!pane_has_agent_glyph(None, Some("X")));
+        assert!(!pane_has_agent_glyph(None, None));
+        // Empty strings ⇒ no agent.
+        assert!(!pane_has_agent_glyph(Some(""), Some("")));
     }
 
     #[test]
