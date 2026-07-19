@@ -23,7 +23,9 @@
 mod transport;
 
 use std::io::{self, BufRead, BufReader, Write};
-use std::path::{Path, PathBuf};
+#[cfg(any(unix, test))]
+use std::path::Path;
+use std::path::PathBuf;
 
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -304,6 +306,7 @@ fn parse_envelope(line: &str) -> crate::Result<Value> {
 
 /// Socket path from an optional `HERDR_SOCKET_PATH` override and the resolved
 /// config home: the override wins, else `<config_home>/herdr/herdr.sock`.
+#[cfg(any(unix, test))]
 fn socket_path_from(explicit: Option<&str>, config_home: &Path) -> PathBuf {
     match explicit {
         Some(path) => PathBuf::from(path),

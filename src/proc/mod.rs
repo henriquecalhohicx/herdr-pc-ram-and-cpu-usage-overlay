@@ -79,12 +79,10 @@ mod tests {
 
     #[test]
     fn children_map_then_subtree_over_synthetic_procs() {
-        let procs: HashMap<u32, ProcEntry> = [
-            (1, 0), (2, 1), (3, 1), (4, 2), (5, 4), (6, 999),
-        ]
-        .into_iter()
-        .map(|(pid, ppid)| (pid, ProcEntry { ppid, jiffies: 0 }))
-        .collect();
+        let procs: HashMap<u32, ProcEntry> = [(1, 0), (2, 1), (3, 1), (4, 2), (5, 4), (6, 999)]
+            .into_iter()
+            .map(|(pid, ppid)| (pid, ProcEntry { ppid, jiffies: 0 }))
+            .collect();
         let kids = children_map(&procs);
         assert_eq!(subtree(1, &kids), HashSet::from([1, 2, 3, 4, 5]));
     }

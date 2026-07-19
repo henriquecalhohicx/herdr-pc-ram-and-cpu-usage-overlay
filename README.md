@@ -56,6 +56,11 @@ herdr plugin action invoke report --plugin ez-corp.space-usage             # one
 Statuses carry a TTL and self-clear if the updater dies; disabling clears
 everything immediately.
 
+On Windows, herdr registers `-win`-suffixed entrypoint/action ids and builds a
+`.exe`, so use `status-toggle-win`, `dashboard-win`, `report-win`,
+`status-enable-win`, `status-disable-win`, and `.\target\release\space-usage.exe`
+in place of the ids and path above.
+
 ## Modes
 
 Configure in `$HERDR_PLUGIN_CONFIG_DIR/config.toml`
@@ -111,5 +116,3 @@ build step, so run `cargo build --release` first — the linked commands invoke
 ## License
 
 MIT — see [LICENSE](LICENSE).
-</content>
-</invoke>

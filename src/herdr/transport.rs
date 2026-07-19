@@ -3,16 +3,16 @@
 
 use std::io;
 use std::path::Path;
-use std::time::Duration;
-
-/// Round-trip timeout guard against a wedged host (Unix only; see the Windows
-/// note in this module).
-const IO_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[cfg(unix)]
 mod imp {
     use super::*;
     use std::os::unix::net::UnixStream;
+    use std::time::Duration;
+
+    /// Round-trip timeout guard against a wedged host (Unix only; see the
+    /// Windows note in this module).
+    const IO_TIMEOUT: Duration = Duration::from_secs(15);
 
     pub type Transport = UnixStream;
 
@@ -39,7 +39,9 @@ mod imp {
         CloseHandle, DuplicateHandle, DUPLICATE_SAME_ACCESS, ERROR_PIPE_BUSY, GENERIC_READ,
         GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE,
     };
-    use windows_sys::Win32::Storage::FileSystem::{CreateFileW, ReadFile, WriteFile, OPEN_EXISTING};
+    use windows_sys::Win32::Storage::FileSystem::{
+        CreateFileW, ReadFile, WriteFile, OPEN_EXISTING,
+    };
     use windows_sys::Win32::System::Pipes::WaitNamedPipeW;
     use windows_sys::Win32::System::Threading::GetCurrentProcess;
 
@@ -178,17 +180,17 @@ mod imp {
     }
 }
 
-pub use imp::{connect, configure, try_clone, Transport};
+pub use imp::{configure, connect, try_clone, Transport};
 
 #[cfg(all(test, windows))]
 mod tests {
     use super::*;
     use std::io::{BufRead, BufReader, Write};
     use std::thread;
+    use windows_sys::Win32::Storage::FileSystem::PIPE_ACCESS_DUPLEX;
     use windows_sys::Win32::System::Pipes::{
         ConnectNamedPipe, CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_TYPE_BYTE, PIPE_WAIT,
     };
-    use windows_sys::Win32::Storage::FileSystem::PIPE_ACCESS_DUPLEX;
 
     fn wide(s: &str) -> Vec<u16> {
         s.encode_utf16().chain(std::iter::once(0)).collect()
@@ -220,9 +222,22 @@ mod tests {
             r.read_line(&mut line).unwrap();
             srv.write_all(line.as_bytes()).unwrap();
         });
-        // Give the server a moment to create the pipe before connecting.
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        let mut client = connect(std::path::Path::new(name)).unwrap();
+        // The server thread may not have created the pipe yet (CreateFileW
+        // then returns ERROR_FILE_NOT_FOUND), so retry connect() for up to
+        // ~2s instead of a fixed sleep, to avoid a race-driven flake.
+        let mut client = {
+            let mut attempt = None;
+            for _ in 0..40 {
+                match connect(std::path::Path::new(name)) {
+                    Ok(c) => {
+                        attempt = Some(c);
+                        break;
+                    }
+                    Err(_) => std::thread::sleep(std::time::Duration::from_millis(50)),
+                }
+            }
+            attempt.expect("pipe never became available for connect()")
+        };
         client.write_all(b"{\"id\":\"1\"}\n").unwrap();
         let mut r = BufReader::new(try_clone(&client).unwrap());
         let mut got = String::new();

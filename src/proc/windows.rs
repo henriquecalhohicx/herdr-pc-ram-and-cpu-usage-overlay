@@ -8,7 +8,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
-use windows_sys::Win32::Foundation::{CloseHandle, FILETIME, FALSE, HANDLE};
+use windows_sys::Win32::Foundation::{CloseHandle, FALSE, FILETIME, HANDLE};
 use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
 };
@@ -150,6 +150,9 @@ mod tests {
     }
 
     fn ft(high: u32, low: u32) -> FILETIME {
-        FILETIME { dwHighDateTime: high, dwLowDateTime: low }
+        FILETIME {
+            dwHighDateTime: high,
+            dwLowDateTime: low,
+        }
     }
 }
