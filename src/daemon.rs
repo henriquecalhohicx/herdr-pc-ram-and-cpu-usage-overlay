@@ -434,20 +434,36 @@ pub fn clear_all(client: &mut Herdr, tracked: &Tracked) {
 
 /// Write the all-space CPU/RAM totals to the client window title.
 pub fn set_title_totals(client: &mut Herdr, spaces: &[Space], labels: &Labels) {
+    let _ = client.window_title_set(&title_totals(spaces, labels));
+}
+
+/// Build the window title: machine-wide `herdr · <cpu> · <ram>` plus a
+/// `· N waiting` tail when any agent is blocked/done. Pure over its inputs so it
+/// is unit-testable (ram falls back to compact absolute when total is unknown).
+fn title_totals(spaces: &[Space], labels: &Labels) -> String {
     let mut cpu = 0.0;
     let mut ram_mb = 0.0;
+    let mut waiting = 0usize;
     for sp in spaces {
         cpu += sp.cpu;
         ram_mb += sp.ram_mb;
+        waiting += sp
+            .claude_panes
+            .iter()
+            .filter(|p| timer::is_waiting(p.status.as_deref()))
+            .count();
     }
-    let title = format!(
-        "spaces · {} {}% · {} {}",
+    let mut title = format!(
+        "herdr · {} {}% · {} {}",
         labels.cpu,
         cpu.round() as i64,
         labels.ram,
         ram_display(ram_mb),
     );
-    let _ = client.window_title_set(&title);
+    if waiting > 0 {
+        title.push_str(&format!(" · {waiting} waiting"));
+    }
+    title
 }
 
 /// Push each space's usage as a TTL'd `usage` workspace metadata token, which
@@ -648,6 +664,7 @@ fn notify(body: &str) {
 mod tests {
     use super::*;
     use crate::config::Labels;
+    use crate::model::ClaudePane;
 
     fn space(cpu: f64, ram_mb: f64) -> Space {
         Space {
@@ -655,6 +672,31 @@ mod tests {
             ram_mb,
             ..Default::default()
         }
+    }
+
+    fn claude(status: &str) -> ClaudePane {
+        ClaudePane {
+            pane_id: String::new(),
+            status: Some(status.to_string()),
+        }
+    }
+
+    #[test]
+    fn title_totals_prefix_and_no_waiting_tail_when_none() {
+        let t = title_totals(&[space(5.6, 0.0)], &Labels::default());
+        assert!(t.starts_with("herdr · cpu 6% · ram "), "got: {t}");
+        assert!(!t.contains("waiting"), "got: {t}");
+    }
+
+    #[test]
+    fn title_totals_sums_cpu_and_counts_blocked_done_across_spaces() {
+        let mut a = space(2.0, 0.0);
+        a.claude_panes = vec![claude("blocked"), claude("working"), claude("idle")];
+        let mut b = space(3.0, 0.0);
+        b.claude_panes = vec![claude("done"), claude("unknown")];
+        let t = title_totals(&[a, b], &Labels::default());
+        assert!(t.starts_with("herdr · cpu 5% · "), "got: {t}");
+        assert!(t.ends_with("· 2 waiting"), "got: {t}");
     }
 
     #[test]

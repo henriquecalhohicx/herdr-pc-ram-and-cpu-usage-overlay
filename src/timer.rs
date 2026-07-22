@@ -16,6 +16,21 @@ pub const DEFAULT_CACHE_MINUTES: u64 = 60;
 /// count down.
 pub const WORKING_STATES: &[&str] = &["working"];
 
+/// herdr `agent_status` values that mean the agent is WAITING on the user —
+/// `blocked` (stuck, needs input) and `done` (finished, awaiting the next
+/// prompt). Surfaced as the window-title "N waiting" count. `idle`/`unknown`
+/// are not counted: the agent isn't demanding attention.
+pub const ATTENTION_STATES: &[&str] = &["blocked", "done"];
+
+/// Whether `status` means the agent is waiting on the user (counted by the
+/// window-title "waiting" tally). An absent status counts as not waiting.
+pub fn is_waiting(status: Option<&str>) -> bool {
+    match status {
+        Some(s) => ATTENTION_STATES.contains(&s),
+        None => false,
+    }
+}
+
 /// Per-pane countdown state. `reset_at` is the instant the current window began
 /// (refreshed every sample the agent is working). `alerted` debounces the alert
 /// sound: set when it fires, cleared whenever the tier leaves Alert.
@@ -129,6 +144,17 @@ mod tests {
         // A value outside herdr's enum is treated as stopped, not working.
         assert!(!is_working(Some("running")));
         assert!(!is_working(None));
+    }
+
+    #[test]
+    fn is_waiting_true_only_for_blocked_and_done() {
+        assert!(is_waiting(Some("blocked")));
+        assert!(is_waiting(Some("done")));
+        assert!(!is_waiting(Some("working")));
+        assert!(!is_waiting(Some("idle")));
+        assert!(!is_waiting(Some("unknown")));
+        assert!(!is_waiting(Some("running")));
+        assert!(!is_waiting(None));
     }
 
     #[test]
