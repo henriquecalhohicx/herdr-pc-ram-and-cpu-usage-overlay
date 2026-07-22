@@ -13,7 +13,7 @@
 
 id = "ez-corp.space-usage"
 name = "PC RAM & CPU Usage Overlay"
-version = "1.0.0"
+version = "1.1.0"
 # 0.7.0 covers the live pane, report action, and agents-panel pseudo-agent.
 # The native sidebar/agents token surface (the `$usage` custom token in the
 # spaces card / agents panel) additionally needs a herdr build with metadata
