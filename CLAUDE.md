@@ -53,6 +53,10 @@ Guidance for working in this repo (a Rust herdr plugin: CPU/RAM per space).
   `idle / working / blocked / done / unknown`. The cache timer treats only
   `working` as actively-working (`WORKING_STATES = ["working"]` in `src/timer.rs`);
   every other value counts down. Claude agents are `agent == "claude"`.
+- **Window title** (`window_title_totals`, gated, default on) shows
+  `herdr · cpu · ram` plus `· N waiting` = count of `claude` panes in
+  `blocked`/`done` (`timer::ATTENTION_STATES`); the tail is omitted at zero to
+  avoid jitter. Only visible windowed — fullscreen hides the window title.
 - **Claude detection is process-based, not title-based.** herdr sets
   `agent=Some(Claude)` while `claude` is the pane's live foreground process and
   `None` when it exits (see herdr-server.log `agent changed ... process=claude`).

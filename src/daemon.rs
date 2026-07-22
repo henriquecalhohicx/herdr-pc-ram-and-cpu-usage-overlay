@@ -700,6 +700,31 @@ mod tests {
     }
 
     #[test]
+    fn title_totals_counts_folded_worktree_child_panes_once() {
+        // A worktree child's claude panes fold into the parent (and the child is
+        // dropped from the list). Count via the fold path: both waiting panes are
+        // tallied exactly once — not doubled, not lost.
+        let mut parent = Space {
+            id: "p".to_string(),
+            ..Default::default()
+        };
+        parent.claude_panes = vec![claude("blocked")];
+        let mut child = Space {
+            id: "c".to_string(),
+            family_parent: Some("p".to_string()),
+            ..Default::default()
+        };
+        child.claude_panes = vec![claude("done")];
+
+        let folded = crate::collect::aggregate_families(vec![parent, child]);
+        assert_eq!(folded.len(), 1, "child folds into parent");
+        assert!(
+            title_totals(&folded, &Labels::default()).ends_with("· 2 waiting"),
+            "both waiting panes counted once through the fold"
+        );
+    }
+
+    #[test]
     fn compact_ram_switches_unit_at_1024() {
         assert_eq!(compact_ram(0.0), "0M");
         assert_eq!(compact_ram(512.6), "513M"); // Math.round
